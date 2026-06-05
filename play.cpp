@@ -24,15 +24,15 @@ void PrintFirstItems(const char* name, const LazySequence<int>& sequence, int co
 }
 
 int main() {
-    int fibonacciSeedData[] = {1, 1};
-    MutableArraySequence<int> fibonacciSeed(fibonacciSeedData, 2);
-    LazySequence<int> fibonacci(FibonacciRule, fibonacciSeed);
+    int fibonacciData[] = {1, 1};
+    MutableArraySequence<int> fibonacciSeed(fibonacciData, 2);
+    LazySequence<int> A(FibonacciRule, fibonacciSeed);
 
-    int powersSeedData[] = {1};
-    MutableArraySequence<int> powersSeed(powersSeedData, 1);
-    LazySequence<int> powersOfTwo(PowersOfTwoRule, powersSeed);
+    int powersData[] = {1};
+    MutableArraySequence<int> powersSeed(powersData, 1);
+    LazySequence<int> B(PowersOfTwoRule, powersSeed);
 
-    LazySequence<int> squares(
+    LazySequence<int> C(
         Ordinal::Omega(),
         [](const Ordinal& index) {
             const int value = static_cast<int>(index.FiniteValue());
@@ -41,26 +41,23 @@ int main() {
 
     LazySequence<int> interleaved(
         Ordinal::Omega(),
-        [&fibonacci, &powersOfTwo, &squares](const Ordinal& index) -> int {
-            if (!index.IsFinite()) {
-                throw IndexOutOfRange();
-            }
+        [&A, &B, &C](const Ordinal& index) -> int {
             const std::size_t number = index.FiniteValue();
             const Ordinal sourceIndex = Ordinal::Finite(number / 3);
             const std::size_t sourceNumber = number % 3;
 
             if (sourceNumber == 0) {
-                return fibonacci.Get(sourceIndex);
+                return A.Get(sourceIndex);
             }
             if (sourceNumber == 1) {
-                return powersOfTwo.Get(sourceIndex);
+                return B.Get(sourceIndex);
             }
-            return squares.Get(sourceIndex);
+            return C.Get(sourceIndex);
         });
 
-    PrintFirstItems("Fibonacci", fibonacci, 10);
-    PrintFirstItems("Powers of two", powersOfTwo, 10);
-    PrintFirstItems("Squares", squares, 10);
+    PrintFirstItems("Fibonacci", A, 10);
+    PrintFirstItems("Two^", B, 10);
+    PrintFirstItems("Squares", C, 10);
     PrintFirstItems("Interleaved", interleaved, 28);
     return 0;
 }
