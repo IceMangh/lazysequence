@@ -33,8 +33,9 @@ int main() {
 
     LazySequence<int> squares(
         Ordinal::Omega(),
-        [](int index) {
-            return index * index;
+        [](const Ordinal& index) {
+            const int value = static_cast<int>(index.FiniteValue());
+            return value * value;
         });
 
     int data[] = {1, 2, 3};
@@ -49,13 +50,11 @@ int main() {
     std::cout << "squares.Get(12) = " << squares.Get(12) << '\n';
     std::cout << "first.Get(1) = " << first.Get(1) << '\n';
 
-    const LazySequence<int>* firstJoin = fibonacci.Concat(powersOfTwo);
-    const LazySequence<int>* result = firstJoin->Concat(first);
+    LazySequence<int> firstJoin = fibonacci.concat(powersOfTwo);
+    LazySequence<int> result = firstJoin.concat(first);
 
-    std::cout << result->Get(Ordinal(1, 5)) << std::endl;
-    std::cout << result->GetLengthOrdinal().ToString() << std::endl;
-    std::cout << result->GetConcatPart(0, 5) << std::endl;
-    delete result;
-    delete firstJoin;
+    std::cout << result.Get(Ordinal(1, 5)) << std::endl;
+    std::cout << result.GetLengthOrdinal().ToString() << std::endl;
+    std::cout << result.GetConcatPart(0, 5) << std::endl;
     return 0;
 }

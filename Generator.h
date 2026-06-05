@@ -6,7 +6,6 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
-#include <utility>
 
 #include "Ordinal.h"
 #include "Exceptions.h"
@@ -18,11 +17,8 @@ class LazySequence;
 template <class T>
 class Generator {
 public:
-    using Provider = std::function<T(int)>;
-    using Rule = std::function<T(Sequence<T>*)>;
-
-    Generator(LazySequence<T>* owner, Ordinal length, Provider provider);
-    Generator(LazySequence<T>* owner, Ordinal length, Rule rule);
+    Generator(LazySequence<T>* owner, Ordinal length, std::function<T(const Ordinal&)> provider);
+    Generator(LazySequence<T>* owner, Ordinal length, std::function<T(Sequence<T>*)> rule);
     Generator(const Generator<T>& other, LazySequence<T>* owner, std::size_t nextIndex);
 
     Ordinal GetLengthOrdinal() const;
@@ -31,21 +27,22 @@ public:
 
     bool HasNext() const;
     T GetNext();
+    T Get(const Ordinal& index) const;
     std::optional<T> TryGetNext();
 
-    Generator<T>* Append(T item) const;
-    Generator<T>* Append(Sequence<T>* items) const;
-    Generator<T>* Insert(T item) const;
-    Generator<T>* Insert(Sequence<T>* items) const;
-    Generator<T>* Remove(T item) const;
-    Generator<T>* Remove(Sequence<T>* items) const;
+    Generator<T> Append(T item) const;
+    Generator<T> Append(Sequence<T>* items) const;
+    Generator<T> Insert(T item) const;
+    Generator<T> Insert(Sequence<T>* items) const;
+    Generator<T> Remove(T item) const;
+    Generator<T> Remove(Sequence<T>* items) const;
 
 private:
     LazySequence<T>* owner_;
     Ordinal lengthOrdinal_;
 
-    Provider provider_;
-    Rule recurrentRule_;
+    std::function<T(const Ordinal&)> provider_;
+    std::function<T(Sequence<T>*)> recurrentRule_;
     std::size_t nextIndex_;
 
     static const Sequence<T>& RequireSequence(const Sequence<T>* items);
@@ -54,24 +51,24 @@ private:
 
     std::shared_ptr<const LazySequence<T>> CopyOwner() const;
     std::shared_ptr<const LazySequence<T>> MakeLazyCopy(const Sequence<T>& items) const;
-    Generator<T>* Create(Ordinal length, Provider provider) const;
-    T GenerateAt(std::size_t index) const;
+    Generator<T> Create(Ordinal length, std::function<T(const Ordinal&)> provider) const;
+    T GenerateAt(const Ordinal& index) const;
 };
 
 template <class T>
-Generator<T>::Generator(LazySequence<T>* owner, Ordinal length, Provider provider)
+Generator<T>::Generator(LazySequence<T>* owner, Ordinal length, std::function<T(const Ordinal&)> provider)
     : owner_(owner),
       lengthOrdinal_(length),
-      provider_(std::move(provider)),
+      provider_(provider),
       recurrentRule_(nullptr),
       nextIndex_(0) {}
 
 template <class T>
-Generator<T>::Generator(LazySequence<T>* owner, Ordinal length, Rule rule)
+Generator<T>::Generator(LazySequence<T>* owner, Ordinal length, std::function<T(Sequence<T>*)> rule)
     : owner_(owner),
       lengthOrdinal_(length),
       provider_(nullptr),
-      recurrentRule_(std::move(rule)),
+      recurrentRule_(rule),
       nextIndex_(0) {}
 
 template <class T>
@@ -111,9 +108,14 @@ T Generator<T>::GetNext() {
         throw IndexOutOfRange();
     }
 
-    T value = GenerateAt(nextIndex_);
+    T value = GenerateAt(Ordinal::Finite(nextIndex_));
     ++nextIndex_;
     return value;
+}
+
+template <class T>
+T Generator<T>::Get(const Ordinal& index) const {
+    return GenerateAt(index);
 }
 
 template <class T>
@@ -125,14 +127,14 @@ std::optional<T> Generator<T>::TryGetNext() {
 }
 
 template <class T>
-Generator<T>* Generator<T>::Append(T item) const {
+Generator<T> Generator<T>::Append(T item) const {
     auto source = CopyOwner();
     const Ordinal newLength = AddLength(lengthOrdinal_, Ordinal::Finite(1));
 
     if (lengthOrdinal_.IsFinite() == false) {
         return Create(
             newLength,
-            [source](int index) {
+            [source](const Ordinal& index) {
                 return source->Get(index);
             });
     }
@@ -140,8 +142,8 @@ Generator<T>* Generator<T>::Append(T item) const {
     const std::size_t oldLength = lengthOrdinal_.FiniteValue();
     return Create(
         newLength,
-        [source, item = std::move(item), oldLength](int index) {
-            if (static_cast<std::size_t>(index) == oldLength) {
+        [source, item, oldLength](const Ordinal& index) {
+            if (index == Ordinal::Finite(oldLength)) {
                 return item;
             }
             return source->Get(index);
@@ -149,7 +151,7 @@ Generator<T>* Generator<T>::Append(T item) const {
 }
 
 template <class T>
-Generator<T>* Generator<T>::Append(Sequence<T>* items) const {
+Generator<T> Generator<T>::Append(Sequence<T>* items) const {
     const Sequence<T>& sequence = RequireSequence(items);
     auto source = CopyOwner();
     auto suffix = MakeLazyCopy(sequence);
@@ -159,7 +161,7 @@ Generator<T>* Generator<T>::Append(Sequence<T>* items) const {
     if (lengthOrdinal_.IsFinite() == false) {
         return Create(
             newLength,
-            [source](int index) {
+            [source](const Ordinal& index) {
                 return source->Get(index);
             });
     }
@@ -167,17 +169,17 @@ Generator<T>* Generator<T>::Append(Sequence<T>* items) const {
     const std::size_t oldLength = lengthOrdinal_.FiniteValue();
     return Create(
         newLength,
-        [source, suffix, oldLength](int index) {
-            const std::size_t current = static_cast<std::size_t>(index);
-            if (current < oldLength) {
+        [source, suffix, oldLength](const Ordinal& index) {
+            const Ordinal oldLengthOrdinal = Ordinal::Finite(oldLength);
+            if (index < oldLengthOrdinal) {
                 return source->Get(index);
             }
-            return suffix->Get(static_cast<int>(current - oldLength));
+            return suffix->Get(index.SubtractPrefix(oldLengthOrdinal));
         });
 }
 
 template <class T>
-Generator<T>* Generator<T>::Insert(T item) const {
+Generator<T> Generator<T>::Insert(T item) const {
     if (lengthOrdinal_.IsFinite() && nextIndex_ > lengthOrdinal_.FiniteValue()) {
         throw IndexOutOfRange();
     }
@@ -190,21 +192,25 @@ Generator<T>* Generator<T>::Insert(T item) const {
 
     return Create(
         newLength,
-        [source, item = std::move(item), insertIndex](int index) {
-            const std::size_t current = static_cast<std::size_t>(index);
+        [source, item, insertIndex](const Ordinal& index) {
+            const Ordinal insertOrdinal = Ordinal::Finite(insertIndex);
 
-            if (current < insertIndex) {
+            if (index < insertOrdinal) {
                 return source->Get(index);
             }
-            if (current == insertIndex) {
+            if (index == insertOrdinal) {
                 return item;
             }
-            return source->Get(index - 1);
+            const std::optional<Ordinal> previous = index.Predecessor();
+            if (!previous.has_value()) {
+                throw IndexOutOfRange();
+            }
+            return source->Get(*previous);
         });
 }
 
 template <class T>
-Generator<T>* Generator<T>::Insert(Sequence<T>* items) const {
+Generator<T> Generator<T>::Insert(Sequence<T>* items) const {
     if (lengthOrdinal_.IsFinite() && nextIndex_ > lengthOrdinal_.FiniteValue()) {
         throw IndexOutOfRange();
     }
@@ -220,26 +226,26 @@ Generator<T>* Generator<T>::Insert(Sequence<T>* items) const {
 
     return Create(
         newLength,
-        [source, inserted, insertedLength, insertIndex](int index) {
-            const std::size_t current = static_cast<std::size_t>(index);
+        [source, inserted, insertedLength, insertIndex](const Ordinal& index) {
+            const Ordinal insertOrdinal = Ordinal::Finite(insertIndex);
 
-            if (current < insertIndex) {
+            if (index < insertOrdinal) {
                 return source->Get(index);
             }
+            const Ordinal insertedIndex = index.SubtractPrefix(insertOrdinal);
             if (insertedLength.IsFinite() == false) {
-                return inserted->Get(static_cast<int>(current - insertIndex));
+                return inserted->Get(insertedIndex);
             }
 
-            const std::size_t length = insertedLength.FiniteValue();
-            if (current - insertIndex < length) {
-                return inserted->Get(static_cast<int>(current - insertIndex));
+            if (insertedIndex < insertedLength) {
+                return inserted->Get(insertedIndex);
             }
-            return source->Get(static_cast<int>(current - length));
+            return source->Get(index.SubtractPrefix(Ordinal::Finite(insertedLength.FiniteValue())));
         });
 }
 
 template <class T>
-Generator<T>* Generator<T>::Remove(T) const {
+Generator<T> Generator<T>::Remove(T) const {
     if (lengthOrdinal_.IsFinite() && nextIndex_ >= lengthOrdinal_.FiniteValue()) {
         throw IndexOutOfRange();
     }
@@ -250,17 +256,17 @@ Generator<T>* Generator<T>::Remove(T) const {
 
     return Create(
         newLength,
-        [source, removeIndex](int index) {
-            const std::size_t current = static_cast<std::size_t>(index);
-            if (current < removeIndex) {
+        [source, removeIndex](const Ordinal& index) {
+            const Ordinal removeOrdinal = Ordinal::Finite(removeIndex);
+            if (index < removeOrdinal) {
                 return source->Get(index);
             }
-            return source->Get(index + 1);
+            return source->Get(index.Successor());
         });
 }
 
 template <class T>
-Generator<T>* Generator<T>::Remove(Sequence<T>* items) const {
+Generator<T> Generator<T>::Remove(Sequence<T>* items) const {
     if (lengthOrdinal_.IsFinite() && nextIndex_ >= lengthOrdinal_.FiniteValue()) {
         throw IndexOutOfRange();
     }
@@ -274,13 +280,13 @@ Generator<T>* Generator<T>::Remove(Sequence<T>* items) const {
 
     return Create(
         newLength,
-        [source, removedLength, removeIndex](int index) {
-            const std::size_t current = static_cast<std::size_t>(index);
-            if (current < removeIndex || removedLength.IsFinite() == false) {
+        [source, removedLength, removeIndex](const Ordinal& index) {
+            const Ordinal removeOrdinal = Ordinal::Finite(removeIndex);
+            if (index < removeOrdinal || removedLength.IsFinite() == false) {
                 return source->Get(index);
             }
 
-            return source->Get(static_cast<int>(current + removedLength.FiniteValue()));
+            return source->Get(index.Add(removedLength));
         });
 }
 
@@ -335,34 +341,33 @@ std::shared_ptr<const LazySequence<T>> Generator<T>::MakeLazyCopy(const Sequence
 }
 
 template <class T>
-Generator<T>* Generator<T>::Create(Ordinal length, Provider provider) const {
-    auto* result = new Generator<T>(*this, owner_, nextIndex_);
-    result->lengthOrdinal_ = length;
-    result->provider_ = std::move(provider);
-    result->recurrentRule_ = nullptr;
+Generator<T> Generator<T>::Create(Ordinal length, std::function<T(const Ordinal&)> provider) const {
+    Generator<T> result(*this, owner_, nextIndex_);
+    result.lengthOrdinal_ = length;
+    result.provider_ = provider;
+    result.recurrentRule_ = nullptr;
     return result;
 }
 
 template <class T>
-T Generator<T>::GenerateAt(std::size_t index) const {
-    if (index > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-        throw IndexOutOfRange();
-    }
-
-    const int intIndex = static_cast<int>(index);
+T Generator<T>::GenerateAt(const Ordinal& index) const {
     if (provider_) {
-        return provider_(intIndex);
+        return provider_(index);
     }
     if (recurrentRule_) {
         if (owner_ == nullptr) {
             throw std::logic_error("Generator has no owner");
+        }
+        if (!index.IsFinite() ||
+            index.FiniteValue() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+            throw IndexOutOfRange();
         }
 
         auto history = owner_->CreateHistoryView();
         return recurrentRule_(&history);
     }
     if (owner_ != nullptr) {
-        return owner_->Get(intIndex);
+        return owner_->Get(index);
     }
 
     throw IndexOutOfRange();

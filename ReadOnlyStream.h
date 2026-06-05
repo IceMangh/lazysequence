@@ -7,7 +7,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <utility>
 
 #include "LazySequence.h"
 #include "MutableArraySequence.h"
@@ -15,9 +14,6 @@
 
 template <class T>
 class ReadOnlyStream {
-public:
-    using Deserializer = std::function<T(const std::string&)>;
-
 private:
     struct FileTag {};
 
@@ -30,7 +26,7 @@ private:
     std::shared_ptr<Sequence<T>> sequence_;
     MutableArraySequence<T> values_;
     std::string filePath_;
-    Deserializer deserializer_;
+    std::function<T(const std::string&)> deserializer_;
     std::ifstream input_;
     std::size_t position_;
     bool opened_;
@@ -38,7 +34,7 @@ private:
     bool hasLength_;
     std::size_t length_;
 
-    static MutableArraySequence<T> ParseTokens(const std::string& text, const Deserializer& deserializer) {
+    static MutableArraySequence<T> ParseTokens(const std::string& text, const std::function<T(const std::string&)>& deserializer) {
         MutableArraySequence<T> values;
         std::istringstream input(text);
         std::string token;
@@ -55,12 +51,12 @@ private:
         return *sequence;
     }
 
-    ReadOnlyStream(FileTag, std::string filePath, Deserializer deserializer)
+    ReadOnlyStream(FileTag, std::string filePath, std::function<T(const std::string&)> deserializer)
         : mode_(Mode::File),
           sequence_(nullptr),
           values_(),
-          filePath_(std::move(filePath)),
-          deserializer_(std::move(deserializer)),
+          filePath_(filePath),
+          deserializer_(deserializer),
           input_(),
           position_(0),
           opened_(false),
@@ -94,12 +90,12 @@ public:
 
     explicit ReadOnlyStream(const Sequence<T>* sequence) : ReadOnlyStream(RequireSequence(sequence)) {}
 
-    ReadOnlyStream(const std::string& text, Deserializer deserializer)
+    ReadOnlyStream(const std::string& text, std::function<T(const std::string&)> deserializer)
         : mode_(Mode::Indexed),
           sequence_(nullptr),
           values_(ParseTokens(text, deserializer)),
           filePath_(),
-          deserializer_(std::move(deserializer)),
+          deserializer_(deserializer),
           input_(),
           position_(0),
           opened_(false),
@@ -107,8 +103,8 @@ public:
           hasLength_(true),
           length_(static_cast<std::size_t>(values_.GetLength())) {}
 
-    static ReadOnlyStream<T> FromFile(const std::string& filePath, Deserializer deserializer) {
-        return ReadOnlyStream<T>(FileTag{}, filePath, std::move(deserializer));
+    static ReadOnlyStream<T> FromFile(const std::string& filePath, std::function<T(const std::string&)> deserializer) {
+        return ReadOnlyStream<T>(FileTag{}, filePath, deserializer);
     }
 
     void Open() {

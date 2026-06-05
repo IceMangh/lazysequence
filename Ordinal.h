@@ -62,6 +62,10 @@ public:
         return Ordinal(omegaBlocks_ + other.omegaBlocks_, other.finiteOffset_);
     }
 
+    Ordinal Successor() const {
+        return Add(Ordinal::Finite(1));
+    }
+
     Ordinal SubtractPrefix(const Ordinal& prefix) const {
         if (*this < prefix) {
             throw std::out_of_range("Ordinal is smaller than prefix");

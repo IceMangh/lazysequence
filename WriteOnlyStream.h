@@ -5,7 +5,6 @@
 #include <functional>
 #include <stdexcept>
 #include <string>
-#include <utility>
 
 #include "LazySequence.h"
 #include "MutableArraySequence.h"
@@ -13,9 +12,6 @@
 
 template <class T>
 class WriteOnlyStream {
-public:
-    using Serializer = std::function<std::string(const T&)>;
-
 private:
     enum class Mode {
         Memory,
@@ -25,16 +21,16 @@ private:
     Mode mode_;
     MutableArraySequence<T> values_;
     std::string filePath_;
-    Serializer serializer_;
+    std::function<std::string(const T&)> serializer_;
     std::ofstream output_;
     std::size_t position_;
     bool opened_;
 
-    explicit WriteOnlyStream(std::string filePath, Serializer serializer)
+    explicit WriteOnlyStream(std::string filePath, std::function<std::string(const T&)> serializer)
         : mode_(Mode::File),
           values_(),
-          filePath_(std::move(filePath)),
-          serializer_(std::move(serializer)),
+          filePath_(filePath),
+          serializer_(serializer),
           output_(),
           position_(0),
           opened_(false) {}
@@ -49,8 +45,8 @@ public:
           position_(0),
           opened_(false) {}
 
-    static WriteOnlyStream<T> ToFile(const std::string& filePath, Serializer serializer) {
-        return WriteOnlyStream<T>(filePath, std::move(serializer));
+    static WriteOnlyStream<T> ToFile(const std::string& filePath, std::function<std::string(const T&)> serializer) {
+        return WriteOnlyStream<T>(filePath, serializer);
     }
 
     void Open() {

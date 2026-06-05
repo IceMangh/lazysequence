@@ -52,9 +52,8 @@ void PrintFibonacciDemo() {
     PrintSequencePrefix(fibonacci, 22);
     std::cout << "Materialized items: " << fibonacci.GetMaterializedCount() << "\n";
 
-    const LazySequence<int>* edited = fibonacci.InsertAt(1000, 5);
-    PrintSequencePrefix(*edited, 10);
-    delete edited;
+    LazySequence<int> edited = fibonacci.insertAt(1000, 5);
+    PrintSequencePrefix(edited, 10);
 }
 
 void PrintFactorialDemo() {

@@ -20,14 +20,23 @@ class LazySequence : public Sequence<T> {
 private:
     friend class Generator<T>;
 
-    using Provider = typename Generator<T>::Provider;
-    using Rule = typename Generator<T>::Rule;
+    struct OrdinalCacheEntry {
+        Ordinal index;
+        T value;
+
+        OrdinalCacheEntry() : index(), value() {}
+
+        OrdinalCacheEntry(const Ordinal& indexValue, const T& valueValue)
+            : index(indexValue), value(valueValue) {}
+    };
 
     mutable DynamicArray<T> cache_;
     mutable int cacheLength_;
+    mutable DynamicArray<OrdinalCacheEntry> ordinalCache_;
+    mutable int ordinalCacheLength_;
     Ordinal lengthOrdinal_;
 
-    Generator<T>* generator_;
+    std::unique_ptr<Generator<T>> generator_;
     std::shared_ptr<const LazySequence<T>> concatLeft_;
     std::shared_ptr<const LazySequence<T>> concatRight_;
 
@@ -64,10 +73,12 @@ private:
                  std::shared_ptr<const LazySequence<T>> right)
             : cache_(),
               cacheLength_(0),
+              ordinalCache_(),
+              ordinalCacheLength_(0),
               lengthOrdinal_(left->lengthOrdinal_.Add(right->lengthOrdinal_)),
               generator_(nullptr),
-              concatLeft_(std::move(left)),
-              concatRight_(std::move(right)) {}
+              concatLeft_(left),
+              concatRight_(right) {}
 
     std::shared_ptr<const LazySequence<T>> SharedCopy() const {
         return std::make_shared<LazySequence<T>>(*this);
@@ -97,6 +108,27 @@ private:
         ++cacheLength_;
     }
 
+    const T* FindOrdinalCache(const Ordinal& index) const {
+        for (int i = 0; i < ordinalCacheLength_; ++i) {
+            const OrdinalCacheEntry& entry = ordinalCache_.Get(i);
+            if (entry.index == index) {
+                return &entry.value;
+            }
+        }
+        return nullptr;
+    }
+
+    const T& StoreOrdinalCache(const Ordinal& index, const T& value) const {
+        if (ordinalCacheLength_ == ordinalCache_.GetLength()) {
+            const int newCapacity = ordinalCache_.GetLength() == 0 ? 8 : ordinalCache_.GetLength() * 2;
+            ordinalCache_.Resize(newCapacity);
+        }
+
+        ordinalCache_.Set(ordinalCacheLength_, OrdinalCacheEntry(index, value));
+        ++ordinalCacheLength_;
+        return ordinalCache_.Get(ordinalCacheLength_ - 1).value;
+    }
+
     void CopyFromSequence(const Sequence<T>& sequence) {
         const int length = sequence.GetLength();
         cache_.Resize(length);
@@ -106,9 +138,10 @@ private:
         }
 
         cacheLength_ = length;
+        ordinalCache_.Resize(0);
+        ordinalCacheLength_ = 0;
         lengthOrdinal_ = Ordinal::Finite(static_cast<std::size_t>(length));
-        delete generator_;
-        generator_ = nullptr;
+        generator_.reset(nullptr);
         concatLeft_ = nullptr;
         concatRight_ = nullptr;
     }
@@ -122,6 +155,36 @@ private:
             throw IndexOutOfRange();
         }
         return generator_->GetNext();
+    }
+
+    T GenerateAt(const Ordinal& index) const {
+        if (generator_ == nullptr) {
+            throw IndexOutOfRange();
+        }
+        return generator_->Get(index);
+    }
+
+    const T& GetGeneratedOrdinal(const Ordinal& index) const {
+        const T* cached = FindOrdinalCache(index);
+        if (cached != nullptr) {
+            return *cached;
+        }
+
+        return StoreOrdinalCache(index, GenerateAt(index));
+    }
+
+    LazySequence<T> Range(const Ordinal& startIndex, const Ordinal& rangeLength) const {
+        const Ordinal end = startIndex.Add(rangeLength);
+        if (startIndex > lengthOrdinal_ || end > lengthOrdinal_) {
+            throw IndexOutOfRange();
+        }
+
+        auto source = SharedCopy();
+        return LazySequence<T>(
+                rangeLength,
+                [source, startIndex](const Ordinal& index) {
+                    return source->Get(startIndex.Add(index));
+                });
     }
 
     void EnsureMaterialized(int index) const {
@@ -143,22 +206,28 @@ public:
     LazySequence()
             : cache_(),
               cacheLength_(0),
+              ordinalCache_(),
+              ordinalCacheLength_(0),
               lengthOrdinal_(Ordinal::Finite(0)),
               generator_(nullptr),
               concatLeft_(nullptr),
               concatRight_(nullptr) {}
 
-    explicit LazySequence(Ordinal lengthOrdinal, Provider provider)
+    explicit LazySequence(Ordinal lengthOrdinal, std::function<T(const Ordinal&)> provider)
             : cache_(),
               cacheLength_(0),
+              ordinalCache_(),
+              ordinalCacheLength_(0),
               lengthOrdinal_(lengthOrdinal),
-              generator_(new Generator<T>(this, lengthOrdinal_, std::move(provider))),
+              generator_(new Generator<T>(this, lengthOrdinal_, provider)),
               concatLeft_(nullptr),
               concatRight_(nullptr) {}
 
     LazySequence(const T* items, int count)
             : cache_(items, count),
               cacheLength_(count),
+              ordinalCache_(),
+              ordinalCacheLength_(0),
               lengthOrdinal_(Ordinal::Finite(static_cast<std::size_t>(count))),
               generator_(nullptr),
               concatLeft_(nullptr),
@@ -167,6 +236,8 @@ public:
     explicit LazySequence(const Sequence<T>& sequence)
             : cache_(),
               cacheLength_(0),
+              ordinalCache_(),
+              ordinalCacheLength_(0),
               lengthOrdinal_(Ordinal::Finite(0)),
               generator_(nullptr),
               concatLeft_(nullptr),
@@ -176,9 +247,11 @@ public:
 
     explicit LazySequence(const Sequence<T>* sequence) : LazySequence(RequireSequence(sequence)) {}
 
-    LazySequence(Rule rule, const Sequence<T>& firstItems)
+    LazySequence(std::function<T(Sequence<T>*)> rule, const Sequence<T>& firstItems)
             : cache_(),
               cacheLength_(0),
+              ordinalCache_(),
+              ordinalCacheLength_(0),
               lengthOrdinal_(Ordinal::Omega()),
               generator_(nullptr),
               concatLeft_(nullptr),
@@ -190,22 +263,22 @@ public:
             cache_.Set(i, firstItems.Get(i));
         }
         cacheLength_ = length;
-        generator_ = new Generator<T>(this, lengthOrdinal_, std::move(rule));
+        generator_.reset(new Generator<T>(this, lengthOrdinal_, rule));
     }
 
-    LazySequence(Rule rule, const Sequence<T>* firstItems) : LazySequence(std::move(rule), RequireSequence(firstItems)) {}
+    LazySequence(std::function<T(Sequence<T>*)> rule, const Sequence<T>* firstItems) : LazySequence(rule, RequireSequence(firstItems)) {}
 
     LazySequence(const LazySequence<T>& other)
             : cache_(other.cache_),
               cacheLength_(other.cacheLength_),
+              ordinalCache_(other.ordinalCache_),
+              ordinalCacheLength_(other.ordinalCacheLength_),
               lengthOrdinal_(other.lengthOrdinal_),
               generator_(other.generator_ ? new Generator<T>(*other.generator_, this, static_cast<std::size_t>(other.cacheLength_)) : nullptr),
               concatLeft_(other.concatLeft_),
               concatRight_(other.concatRight_) {}
 
-    ~LazySequence() override {
-        delete generator_;
-    }
+    ~LazySequence() override = default;
 
     LazySequence<T>& operator=(const LazySequence<T>& other) {
         if (this == &other) {
@@ -215,12 +288,13 @@ public:
         Generator<T>* newGenerator = other.generator_
                                      ? new Generator<T>(*other.generator_, this, static_cast<std::size_t>(other.cacheLength_))
                                      : nullptr;
-        delete generator_;
 
         cache_ = other.cache_;
         cacheLength_ = other.cacheLength_;
+        ordinalCache_ = other.ordinalCache_;
+        ordinalCacheLength_ = other.ordinalCacheLength_;
         lengthOrdinal_ = other.lengthOrdinal_;
-        generator_ = newGenerator;
+        generator_.reset(newGenerator);
         concatLeft_ = other.concatLeft_;
         concatRight_ = other.concatRight_;
         return *this;
@@ -231,14 +305,19 @@ public:
     }
 
     std::size_t GetMaterializedCount() const {
-        return static_cast<std::size_t>(cacheLength_);
+        std::size_t count = static_cast<std::size_t>(cacheLength_ + ordinalCacheLength_);
+        if (HasConcatParts()) {
+            count += concatLeft_->GetMaterializedCount();
+            count += concatRight_->GetMaterializedCount();
+        }
+        return count;
     }
 
     bool HasConcatParts() const {
         return concatLeft_ != nullptr && concatRight_ != nullptr;
     }
 
-    const T& GetConcatPart(int partIndex, int index) const {
+    const T& GetConcatPart(int partIndex, const Ordinal& index) const {
         if (!HasConcatParts()) {
             if (partIndex == 0) {
                 return Get(index);
@@ -253,6 +332,13 @@ public:
             return concatRight_->Get(index);
         }
         throw IndexOutOfRange();
+    }
+
+    const T& GetConcatPart(int partIndex, int index) const {
+        if (index < 0) {
+            throw IndexOutOfRange();
+        }
+        return GetConcatPart(partIndex, Ordinal::Finite(static_cast<std::size_t>(index)));
     }
 
     const T& GetFirst() const override {
@@ -290,14 +376,14 @@ public:
             return concatRight_->Get(index.SubtractPrefix(concatLeft_->lengthOrdinal_));
         }
 
-        if (!index.IsFinite() ||
-            index.FiniteValue() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-            throw IndexOutOfRange();
+        if (index.IsFinite() &&
+            index.FiniteValue() <= static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+            const int finiteIndex = static_cast<int>(index.FiniteValue());
+            EnsureMaterialized(finiteIndex);
+            return cache_.Get(finiteIndex);
         }
 
-        const int finiteIndex = static_cast<int>(index.FiniteValue());
-        EnsureMaterialized(finiteIndex);
-        return cache_.Get(finiteIndex);
+        return GetGeneratedOrdinal(index);
     }
 
     int GetLength() const override {
@@ -310,92 +396,99 @@ public:
         return static_cast<int>(lengthOrdinal_.FiniteValue());
     }
 
-    LazySequence<T>* GetSubsequence(int startIndex, int endIndex) const override {
+    LazySequence<T> subsequence(int startIndex, int endIndex) const {
         if (startIndex < 0 || endIndex < 0 || startIndex > endIndex) {
             throw IndexOutOfRange();
         }
-        if (lengthOrdinal_.IsFinite() && static_cast<std::size_t>(endIndex) >= lengthOrdinal_.FiniteValue()) {
+
+        return subsequence(
+                Ordinal::Finite(static_cast<std::size_t>(startIndex)),
+                Ordinal::Finite(static_cast<std::size_t>(endIndex)));
+    }
+
+    LazySequence<T> subsequence(const Ordinal& startIndex, const Ordinal& endIndex) const {
+        if (endIndex < startIndex || !(endIndex < lengthOrdinal_)) {
             throw IndexOutOfRange();
         }
 
-        auto source = SharedCopy();
-        const int length = endIndex - startIndex + 1;
-        return new LazySequence<T>(
-                Ordinal::Finite(static_cast<std::size_t>(length)),
-                [source, startIndex](int index) {
-                    return source->Get(startIndex + index);
-                });
+        return Range(startIndex, endIndex.SubtractPrefix(startIndex).Successor());
+    }
+
+    LazySequence<T> Subsequence(int startIndex, int endIndex) const {
+        return subsequence(startIndex, endIndex);
+    }
+
+    LazySequence<T> Subsequence(const Ordinal& startIndex, const Ordinal& endIndex) const {
+        return subsequence(startIndex, endIndex);
     }
 
     IEnumerator<T>* GetEnumerator() const override {
         return new Enumerator(this);
     }
 
-    LazySequence<T>* Append(const T& item) const {
+    LazySequence<T> append(const T& item) const {
         const LazySequence<T> suffix(&item, 1);
-        return Concat(suffix);
+        return concat(suffix);
     }
 
-    LazySequence<T>* Prepend(const T& item) const {
+    LazySequence<T> prepend(const T& item) const {
         const LazySequence<T> prefix(&item, 1);
-        return prefix.Concat(*this);
+        return prefix.concat(*this);
     }
 
-    LazySequence<T>* InsertAt(const T& item, int index) const {
+    LazySequence<T> insertAt(const T& item, int index) const {
         if (index < 0) {
             throw IndexOutOfRange();
         }
-        if (lengthOrdinal_.IsFinite() && static_cast<std::size_t>(index) > lengthOrdinal_.FiniteValue()) {
+        return insertAt(item, Ordinal::Finite(static_cast<std::size_t>(index)));
+    }
+
+    LazySequence<T> insertAt(const T& item, const Ordinal& index) const {
+        if (index > lengthOrdinal_) {
             throw IndexOutOfRange();
         }
 
-        auto source = SharedCopy();
-        const std::size_t insertIndex = static_cast<std::size_t>(index);
-        const Ordinal newLength = lengthOrdinal_.IsFinite()
-                                  ? lengthOrdinal_.Add(Ordinal::Finite(1))
-                                  : lengthOrdinal_;
-
-        return new LazySequence<T>(
-                newLength,
-                [source, item, insertIndex](int currentIndex) {
-                    const std::size_t current = static_cast<std::size_t>(currentIndex);
-
-                    if (current < insertIndex) {
-                        return source->Get(currentIndex);
-                    }
-                    if (current == insertIndex) {
-                        return item;
-                    }
-                    return source->Get(currentIndex - 1);
-                });
+        LazySequence<T> prefix = Range(Ordinal::Finite(0), index);
+        LazySequence<T> inserted(&item, 1);
+        LazySequence<T> suffix = Range(index, lengthOrdinal_.SubtractPrefix(index));
+        return prefix.concat(inserted).concat(suffix);
     }
 
-    LazySequence<T>* Concat(const Sequence<T>& other) const override {
-        return new LazySequence<T>(SharedCopy(), CopyAsLazy(other));
+    LazySequence<T> concat(const Sequence<T>& other) const {
+        return LazySequence<T>(SharedCopy(), CopyAsLazy(other));
     }
 
-    LazySequence<T>* Concat(const LazySequence<T>* other) const {
-        return Concat(RequireSequence(other));
+    LazySequence<T> concat(const Sequence<T>* other) const {
+        return concat(RequireSequence(other));
     }
 
-    LazySequence<T>* Clone() const override {
-        return new LazySequence<T>(*this);
+    LazySequence<T> Concat(const LazySequence<T>& other) const {
+        return concat(other);
     }
 
-    LazySequence<T>* CreateEmpty() const override {
-        return new LazySequence<T>();
+    LazySequence<T> Concat(const LazySequence<T>* other) const {
+        return concat(RequireSequence(other));
     }
 
     template <class Mapper>
-    auto Map(Mapper mapper) const -> LazySequence<decltype(mapper(std::declval<T>()))>* {
-        using Result = decltype(mapper(std::declval<T>()));
+    auto map(Mapper mapper) const -> LazySequence<decltype(mapper(std::declval<T>()))> {
+        if (HasConcatParts()) {
+            auto left = concatLeft_->map(mapper);
+            auto right = concatRight_->map(mapper);
+            return left.concat(right);
+        }
 
         auto source = SharedCopy();
-        return new LazySequence<Result>(
+        return LazySequence<decltype(mapper(std::declval<T>()))>(
                 lengthOrdinal_,
-                [source, mapper](int index) {
+                [source, mapper](const Ordinal& index) {
                     return mapper(source->Get(index));
                 });
+    }
+
+    template <class Mapper>
+    auto Map(Mapper mapper) const -> LazySequence<decltype(mapper(std::declval<T>()))> {
+        return map(mapper);
     }
 
     template <class Reducer, class Accumulator>
@@ -413,7 +506,13 @@ public:
     }
 
     template <class Predicate>
-    LazySequence<T>* Where(Predicate predicate) const {
+    LazySequence<T> where(Predicate predicate) const {
+        if (HasConcatParts()) {
+            LazySequence<T> left = concatLeft_->where(predicate);
+            LazySequence<T> right = concatRight_->where(predicate);
+            return left.concat(right);
+        }
+
         auto source = SharedCopy();
 
         if (lengthOrdinal_.IsFinite()) {
@@ -427,17 +526,22 @@ public:
                 }
             }
 
-            return new LazySequence<T>(filtered);
+            return LazySequence<T>(filtered);
         }
 
         auto accepted = std::make_shared<DynamicArray<T>>();
         auto acceptedLength = std::make_shared<int>(0);
         auto scanned = std::make_shared<int>(0);
 
-        return new LazySequence<T>(
+        return LazySequence<T>(
                 Ordinal::Omega(),
-                [source, predicate, accepted, acceptedLength, scanned](int index) {
-                    while (*acceptedLength <= index) {
+                [source, predicate, accepted, acceptedLength, scanned](const Ordinal& index) {
+                    if (!index.IsFinite() ||
+                        index.FiniteValue() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+                        throw IndexOutOfRange();
+                    }
+                    const int finiteIndex = static_cast<int>(index.FiniteValue());
+                    while (*acceptedLength <= finiteIndex) {
                         T value = source->Get((*scanned)++);
 
                         if (predicate(value)) {
@@ -451,42 +555,68 @@ public:
                         }
                     }
 
-                    return accepted->Get(index);
+                    return accepted->Get(finiteIndex);
                 });
     }
 
+    template <class Predicate>
+    LazySequence<T> Where(Predicate predicate) const {
+        return where(predicate);
+    }
+
     template <class U>
-    LazySequence<std::pair<T, U>>* Zip(const Sequence<U>& other) const {
+    LazySequence<std::pair<T, U>> zip(const Sequence<U>& other) const {
         auto left = SharedCopy();
 
-        std::shared_ptr<Sequence<U>> rightSequence;
+        std::shared_ptr<const LazySequence<U>> rightSequence;
         Ordinal rightLength;
         if (const auto* lazy = dynamic_cast<const LazySequence<U>*>(&other)) {
-            rightSequence.reset(lazy->Clone());
+            rightSequence = std::make_shared<LazySequence<U>>(*lazy);
             rightLength = lazy->GetLengthOrdinal();
         } else {
-            rightSequence.reset(other.Clone());
+            rightSequence = std::make_shared<LazySequence<U>>(other);
             rightLength = Ordinal::Finite(static_cast<std::size_t>(other.GetLength()));
         }
 
         const Ordinal newLength = MinOrdinal(lengthOrdinal_, rightLength);
-        return new LazySequence<std::pair<T, U>>(
+        return LazySequence<std::pair<T, U>>(
                 newLength,
-                [left, rightSequence](int index) {
+                [left, rightSequence](const Ordinal& index) {
                     return std::make_pair(left->Get(index), rightSequence->Get(index));
                 });
     }
 
+    template <class U>
+    LazySequence<std::pair<T, U>> Zip(const Sequence<U>& other) const {
+        return zip(other);
+    }
+
 private:
+    LazySequence<T>* Clone() const override {
+        return new LazySequence<T>(*this);
+    }
+
+    LazySequence<T>* CreateEmpty() const override {
+        return new LazySequence<T>();
+    }
+
+    LazySequence<T>* GetSubsequence(int startIndex, int endIndex) const override {
+        return new LazySequence<T>(subsequence(startIndex, endIndex));
+    }
+
+    LazySequence<T>* Concat(const Sequence<T>& other) const override {
+        return new LazySequence<T>(concat(other));
+    }
+
     LazySequence<T>* Append(const T& item) override {
-        return static_cast<const LazySequence<T>&>(*this).Append(item);
+        return new LazySequence<T>(static_cast<const LazySequence<T>&>(*this).append(item));
     }
 
     LazySequence<T>* Prepend(const T& item) override {
-        return static_cast<const LazySequence<T>&>(*this).Prepend(item);
+        return new LazySequence<T>(static_cast<const LazySequence<T>&>(*this).prepend(item));
     }
 
     LazySequence<T>* InsertAt(const T& item, int index) override {
-        return static_cast<const LazySequence<T>&>(*this).InsertAt(item, index);
+        return new LazySequence<T>(static_cast<const LazySequence<T>&>(*this).insertAt(item, index));
     }
 };
