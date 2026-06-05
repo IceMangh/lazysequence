@@ -56,7 +56,7 @@ public:
         if (mode_ == Mode::File) {
             output_.open(filePath_);
             if (!output_) {
-                throw std::runtime_error("Cannot open output stream file");
+                throw std::runtime_error("open failed");
             }
         }
         opened_ = true;
@@ -90,7 +90,7 @@ public:
 
     LazySequence<T> ToSequence() const {
         if (mode_ != Mode::Memory) {
-            throw std::logic_error("Only memory stream can be converted to sequence");
+            throw std::logic_error("not memory stream");
         }
         return LazySequence<T>(values_);
     }

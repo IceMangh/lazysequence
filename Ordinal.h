@@ -35,7 +35,7 @@ public:
 
     std::size_t FiniteValue() const {
         if (!IsFinite()) {
-            throw std::overflow_error("Transfinite ordinal has no finite value");
+            throw std::overflow_error("non-finite ordinal");
         }
         return finiteOffset_;
     }
@@ -51,13 +51,13 @@ public:
     Ordinal Add(const Ordinal& other) const {
         if (other.omegaBlocks_ == 0) {
             if (finiteOffset_ > std::numeric_limits<std::size_t>::max() - other.finiteOffset_) {
-                throw std::overflow_error("Ordinal addition overflow");
+                throw std::overflow_error("ordinal overflow");
             }
             return Ordinal(omegaBlocks_, finiteOffset_ + other.finiteOffset_);
         }
 
         if (omegaBlocks_ > std::numeric_limits<std::size_t>::max() - other.omegaBlocks_) {
-            throw std::overflow_error("Ordinal addition overflow");
+            throw std::overflow_error("ordinal overflow");
         }
         return Ordinal(omegaBlocks_ + other.omegaBlocks_, other.finiteOffset_);
     }
@@ -68,7 +68,7 @@ public:
 
     Ordinal SubtractPrefix(const Ordinal& prefix) const {
         if (*this < prefix) {
-            throw std::out_of_range("Ordinal is smaller than prefix");
+            throw std::out_of_range("bad prefix");
         }
         if (omegaBlocks_ == prefix.omegaBlocks_) {
             return Ordinal::Finite(finiteOffset_ - prefix.finiteOffset_);

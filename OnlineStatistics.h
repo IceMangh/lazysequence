@@ -58,7 +58,7 @@ public:
 
     OnlineStatisticsSnapshot Snapshot() const {
         if (IsEmpty()) {
-            throw std::logic_error("Statistics is empty");
+            throw std::logic_error("empty statistics");
         }
 
         double median = lower_.Top();

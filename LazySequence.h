@@ -63,7 +63,7 @@ private:
 
         T Current() const override {
             if (index_ < 0) {
-                throw std::logic_error("Enumerator is not positioned on an item");
+                throw std::logic_error("bad enumerator");
             }
             return sequence_->Get(index_);
         }
@@ -93,7 +93,7 @@ private:
 
     static const Sequence<T>& RequireSequence(const Sequence<T>* sequence) {
         if (sequence == nullptr) {
-            throw std::invalid_argument("Sequence pointer is null");
+            throw std::invalid_argument("null sequence");
         }
         return *sequence;
     }
@@ -352,7 +352,7 @@ public:
 
         const std::optional<Ordinal> lastIndex = lengthOrdinal_.Predecessor();
         if (!lastIndex.has_value()) {
-            throw std::logic_error("Lazy sequence length has no last item");
+            throw std::logic_error("no last item");
         }
         return Get(*lastIndex);
     }
@@ -365,7 +365,7 @@ public:
     }
 
     const T& Get(const Ordinal& index) const {
-        if (!(index < lengthOrdinal_)) {
+        if (index >= lengthOrdinal_) {
             throw IndexOutOfRange();
         }
 
@@ -376,8 +376,7 @@ public:
             return concatRight_->Get(index.SubtractPrefix(concatLeft_->lengthOrdinal_));
         }
 
-        if (index.IsFinite() &&
-            index.FiniteValue() <= static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        if (index.IsFinite() && index.FiniteValue() <= static_cast<std::size_t>(std::numeric_limits<int>::max())) {
             const int finiteIndex = static_cast<int>(index.FiniteValue());
             EnsureMaterialized(finiteIndex);
             return cache_.Get(finiteIndex);
@@ -388,25 +387,25 @@ public:
 
     int GetLength() const override {
         if (!lengthOrdinal_.IsFinite()) {
-            throw std::overflow_error("Lazy sequence length is transfinite");
+            throw std::overflow_error("non-finite length");
         }
         if (lengthOrdinal_.FiniteValue() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-            throw std::overflow_error("Lazy sequence is too long");
+            throw std::overflow_error("length overflow");
         }
         return static_cast<int>(lengthOrdinal_.FiniteValue());
     }
 
-    LazySequence<T> subsequence(int startIndex, int endIndex) const {
+    LazySequence<T> Subsequence(int startIndex, int endIndex) const {
         if (startIndex < 0 || endIndex < 0 || startIndex > endIndex) {
             throw IndexOutOfRange();
         }
 
-        return subsequence(
+        return Subsequence(
                 Ordinal::Finite(static_cast<std::size_t>(startIndex)),
                 Ordinal::Finite(static_cast<std::size_t>(endIndex)));
     }
 
-    LazySequence<T> subsequence(const Ordinal& startIndex, const Ordinal& endIndex) const {
+    LazySequence<T> Subsequence(const Ordinal& startIndex, const Ordinal& endIndex) const {
         if (endIndex < startIndex || !(endIndex < lengthOrdinal_)) {
             throw IndexOutOfRange();
         }
@@ -414,36 +413,28 @@ public:
         return Range(startIndex, endIndex.SubtractPrefix(startIndex).Successor());
     }
 
-    LazySequence<T> Subsequence(int startIndex, int endIndex) const {
-        return subsequence(startIndex, endIndex);
-    }
-
-    LazySequence<T> Subsequence(const Ordinal& startIndex, const Ordinal& endIndex) const {
-        return subsequence(startIndex, endIndex);
-    }
-
     IEnumerator<T>* GetEnumerator() const override {
         return new Enumerator(this);
     }
 
-    LazySequence<T> append(const T& item) const {
+    LazySequence<T> AppendItem(const T& item) const {
         const LazySequence<T> suffix(&item, 1);
-        return concat(suffix);
+        return Concat(suffix);
     }
 
-    LazySequence<T> prepend(const T& item) const {
+    LazySequence<T> PrependItem(const T& item) const {
         const LazySequence<T> prefix(&item, 1);
-        return prefix.concat(*this);
+        return prefix.Concat(*this);
     }
 
-    LazySequence<T> insertAt(const T& item, int index) const {
+    LazySequence<T> InsertItemAt(const T& item, int index) const {
         if (index < 0) {
             throw IndexOutOfRange();
         }
-        return insertAt(item, Ordinal::Finite(static_cast<std::size_t>(index)));
+        return InsertItemAt(item, Ordinal::Finite(static_cast<std::size_t>(index)));
     }
 
-    LazySequence<T> insertAt(const T& item, const Ordinal& index) const {
+    LazySequence<T> InsertItemAt(const T& item, const Ordinal& index) const {
         if (index > lengthOrdinal_) {
             throw IndexOutOfRange();
         }
@@ -451,50 +442,48 @@ public:
         LazySequence<T> prefix = Range(Ordinal::Finite(0), index);
         LazySequence<T> inserted(&item, 1);
         LazySequence<T> suffix = Range(index, lengthOrdinal_.SubtractPrefix(index));
-        return prefix.concat(inserted).concat(suffix);
-    }
-
-    LazySequence<T> concat(const Sequence<T>& other) const {
-        return LazySequence<T>(SharedCopy(), CopyAsLazy(other));
-    }
-
-    LazySequence<T> concat(const Sequence<T>* other) const {
-        return concat(RequireSequence(other));
+        return prefix.Concat(inserted).Concat(suffix);
     }
 
     LazySequence<T> Concat(const LazySequence<T>& other) const {
-        return concat(other);
+        return LazySequence<T>(SharedCopy(), other.SharedCopy());
     }
 
     LazySequence<T> Concat(const LazySequence<T>* other) const {
-        return concat(RequireSequence(other));
+        if (other == nullptr) {
+            throw std::invalid_argument("null sequence");
+        }
+        return Concat(*other);
     }
 
-    template <class Mapper>
-    auto map(Mapper mapper) const -> LazySequence<decltype(mapper(std::declval<T>()))> {
+    LazySequence<T> ConcatWith(const Sequence<T>& other) const {
+        return LazySequence<T>(SharedCopy(), CopyAsLazy(other));
+    }
+
+    LazySequence<T> ConcatWith(const Sequence<T>* other) const {
+        return ConcatWith(RequireSequence(other));
+    }
+
+    template <class Result, class Mapper>
+    LazySequence<Result> Map(Mapper mapper) const {
         if (HasConcatParts()) {
-            auto left = concatLeft_->map(mapper);
-            auto right = concatRight_->map(mapper);
-            return left.concat(right);
+            LazySequence<Result> left = concatLeft_->template Map<Result>(mapper);
+            LazySequence<Result> right = concatRight_->template Map<Result>(mapper);
+            return left.Concat(right);
         }
 
         auto source = SharedCopy();
-        return LazySequence<decltype(mapper(std::declval<T>()))>(
+        return LazySequence<Result>(
                 lengthOrdinal_,
                 [source, mapper](const Ordinal& index) {
                     return mapper(source->Get(index));
                 });
     }
 
-    template <class Mapper>
-    auto Map(Mapper mapper) const -> LazySequence<decltype(mapper(std::declval<T>()))> {
-        return map(mapper);
-    }
-
     template <class Reducer, class Accumulator>
     Accumulator Reduce(Reducer reducer, Accumulator start) const {
         if (!lengthOrdinal_.IsFinite()) {
-            throw std::logic_error("Reduce over an infinite lazy sequence is not finite");
+            throw std::logic_error("non-finite reduce");
         }
 
         Accumulator result = start;
@@ -506,11 +495,11 @@ public:
     }
 
     template <class Predicate>
-    LazySequence<T> where(Predicate predicate) const {
+    LazySequence<T> Where(Predicate predicate) const {
         if (HasConcatParts()) {
-            LazySequence<T> left = concatLeft_->where(predicate);
-            LazySequence<T> right = concatRight_->where(predicate);
-            return left.concat(right);
+            LazySequence<T> left = concatLeft_->Where(predicate);
+            LazySequence<T> right = concatRight_->Where(predicate);
+            return left.Concat(right);
         }
 
         auto source = SharedCopy();
@@ -559,13 +548,8 @@ public:
                 });
     }
 
-    template <class Predicate>
-    LazySequence<T> Where(Predicate predicate) const {
-        return where(predicate);
-    }
-
     template <class U>
-    LazySequence<std::pair<T, U>> zip(const Sequence<U>& other) const {
+    LazySequence<std::pair<T, U>> Zip(const Sequence<U>& other) const {
         auto left = SharedCopy();
 
         std::shared_ptr<const LazySequence<U>> rightSequence;
@@ -586,37 +570,32 @@ public:
                 });
     }
 
-    template <class U>
-    LazySequence<std::pair<T, U>> Zip(const Sequence<U>& other) const {
-        return zip(other);
-    }
-
 private:
-    LazySequence<T>* Clone() const override {
+    Sequence<T>* Clone() const override {
         return new LazySequence<T>(*this);
     }
 
-    LazySequence<T>* CreateEmpty() const override {
+    Sequence<T>* CreateEmpty() const override {
         return new LazySequence<T>();
     }
 
-    LazySequence<T>* GetSubsequence(int startIndex, int endIndex) const override {
-        return new LazySequence<T>(subsequence(startIndex, endIndex));
+    Sequence<T>* GetSubsequence(int startIndex, int endIndex) const override {
+        return new LazySequence<T>(Subsequence(startIndex, endIndex));
     }
 
-    LazySequence<T>* Concat(const Sequence<T>& other) const override {
-        return new LazySequence<T>(concat(other));
+    Sequence<T>* Concat(const Sequence<T>& other) const override {
+        return new LazySequence<T>(ConcatWith(other));
     }
 
-    LazySequence<T>* Append(const T& item) override {
-        return new LazySequence<T>(static_cast<const LazySequence<T>&>(*this).append(item));
+    Sequence<T>* Append(const T& item) override {
+        return new LazySequence<T>(static_cast<const LazySequence<T>&>(*this).AppendItem(item));
     }
 
-    LazySequence<T>* Prepend(const T& item) override {
-        return new LazySequence<T>(static_cast<const LazySequence<T>&>(*this).prepend(item));
+    Sequence<T>* Prepend(const T& item) override {
+        return new LazySequence<T>(static_cast<const LazySequence<T>&>(*this).PrependItem(item));
     }
 
-    LazySequence<T>* InsertAt(const T& item, int index) override {
-        return new LazySequence<T>(static_cast<const LazySequence<T>&>(*this).insertAt(item, index));
+    Sequence<T>* InsertAt(const T& item, int index) override {
+        return new LazySequence<T>(static_cast<const LazySequence<T>&>(*this).InsertItemAt(item, index));
     }
 };

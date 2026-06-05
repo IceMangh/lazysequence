@@ -44,7 +44,7 @@ public:
 
     double Top() const {
         if (IsEmpty()) {
-            throw std::logic_error("Heap is empty");
+            throw std::logic_error("empty heap");
         }
         return data_.Get(0);
     }

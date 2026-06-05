@@ -39,14 +39,14 @@ public:
 
     const T& GetFirst() const override {
         if (length_ == 0) {
-            throw EmptyStructure("Sequence view is empty");
+            throw EmptyStructure("empty view");
         }
         return items_.Get(0);
     }
 
     const T& GetLast() const override {
         if (length_ == 0) {
-            throw EmptyStructure("Sequence view is empty");
+            throw EmptyStructure("empty view");
         }
         return items_.Get(length_ - 1);
     }
@@ -81,15 +81,15 @@ public:
     }
 
     Sequence<T>* Append(const T&) override {
-        throw std::logic_error("DynamicArraySequenceView is read-only");
+        throw std::logic_error("read only");
     }
 
     Sequence<T>* Prepend(const T&) override {
-        throw std::logic_error("DynamicArraySequenceView is read-only");
+        throw std::logic_error("read only");
     }
 
     Sequence<T>* InsertAt(const T&, int) override {
-        throw std::logic_error("DynamicArraySequenceView is read-only");
+        throw std::logic_error("read only");
     }
 
     Sequence<T>* Concat(const Sequence<T>& other) const override {

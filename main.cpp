@@ -36,12 +36,12 @@ void PrintSequencePrefix(const LazySequence<int>& sequence, int count) {
 }
 
 void PrintSnapshot(const OnlineStatisticsSnapshot& snapshot) {
-    std::cout << "Count: " << snapshot.count << "\n";
-    std::cout << "Sum: " << snapshot.sum << "\n";
-    std::cout << "Min: " << snapshot.min << "\n";
-    std::cout << "Max: " << snapshot.max << "\n";
-    std::cout << "Average: " << snapshot.average << "\n";
-    std::cout << "Median: " << snapshot.median << "\n";
+    std::cout << "Количество: " << snapshot.count << "\n";
+    std::cout << "Сумма: " << snapshot.sum << "\n";
+    std::cout << "Минимум: " << snapshot.min << "\n";
+    std::cout << "Максимум: " << snapshot.max << "\n";
+    std::cout << "Среднее: " << snapshot.average << "\n";
+    std::cout << "Медиана: " << snapshot.median << "\n";
 }
 
 void PrintFibonacciDemo() {
@@ -49,10 +49,12 @@ void PrintFibonacciDemo() {
     MutableArraySequence<int> firstItems(seed, 2);
     const LazySequence<int> fibonacci(FibonacciRule, firstItems);
 
+    std::cout << "Фибоначчи:\n";
     PrintSequencePrefix(fibonacci, 22);
-    std::cout << "Materialized items: " << fibonacci.GetMaterializedCount() << "\n";
+    std::cout << "В кэше: " << fibonacci.GetMaterializedCount() << "\n";
 
-    LazySequence<int> edited = fibonacci.insertAt(1000, 5);
+    LazySequence<int> edited = fibonacci.InsertItemAt(1000, 5);
+    std::cout << "После вставки:\n";
     PrintSequencePrefix(edited, 10);
 }
 
@@ -61,9 +63,9 @@ void PrintFactorialDemo() {
     MutableArraySequence<int> firstItems(seed, 1);
     const LazySequence<int> factorials(FactorialRule, firstItems);
 
-    std::cout << "\nFirst 8 factorials:\n";
+    std::cout << "\nФакториалы:\n";
     PrintSequencePrefix(factorials, 8);
-    std::cout << "Materialized items: " << factorials.GetMaterializedCount() << "\n";
+    std::cout << "В кэше: " << factorials.GetMaterializedCount() << "\n";
 }
 
 void PrintPowersOfTwoDemo() {
@@ -71,9 +73,9 @@ void PrintPowersOfTwoDemo() {
     MutableArraySequence<int> firstItems(seed, 1);
     const LazySequence<int> powersOfTwo(PowersOfTwoRule, firstItems);
 
-    std::cout << "\nFirst 12 powers of two:\n";
+    std::cout << "\nСтепени двойки:\n";
     PrintSequencePrefix(powersOfTwo, 12);
-    std::cout << "Materialized items: " << powersOfTwo.GetMaterializedCount() << "\n";
+    std::cout << "В кэше: " << powersOfTwo.GetMaterializedCount() << "\n";
 }
 
 void PrintLazySequenceDemos() {
@@ -94,28 +96,39 @@ OnlineStatisticsSnapshot CollectStatisticsFromText(const std::string& text) {
 }
 
 void RunPreparedStatisticsSamples() {
-    std::cout << "Prepared dataset: shuffled odd count\n";
+    std::cout << "Набор 1:\n";
     PrintSnapshot(CollectStatisticsFromText("5 1 3 2 4"));
 
-    std::cout << "\nPrepared dataset: even count with negatives\n";
+    std::cout << "\nНабор 2:\n";
     PrintSnapshot(CollectStatisticsFromText("-10 0 10 20"));
 
-    std::cout << "\nPrepared dataset: repeated values\n";
+    std::cout << "\nНабор 3:\n";
     PrintSnapshot(CollectStatisticsFromText("7 7 7 7 7 7"));
 }
 
 void RunGeneratedStressStatistics() {
-    std::cout << "Enter generated stream length, for example 1000000:\n";
+    std::cout << "Сколько чисел сгенерировать?\n";
     std::size_t count = 0;
     std::cin >> count;
     if (count == 0) {
-        std::cout << "Length must be positive.\n";
+        std::cout << "Число должно быть больше нуля.\n";
         return;
     }
 
     double seed[] = {1.0};
     MutableArraySequence<double> firstItems(seed, 1);
     LazySequence<double> naturalNumbers(NextNaturalNumber, firstItems);
+
+    const std::size_t outputCount = count > 100 ? 100 : count;
+    std::cout << "Сгенерированные числа:\n";
+    for (std::size_t i = 0; i < outputCount; ++i) {
+        std::cout << naturalNumbers.Get(static_cast<int>(i));
+        std::cout << (i + 1 == outputCount ? '\n' : ' ');
+    }
+    if (outputCount < count) {
+        std::cout << "Показаны первые " << outputCount << " из " << count << ".\n";
+    }
+
     ReadOnlyStream<double> stream(naturalNumbers);
 
     stream.Open();
@@ -126,7 +139,7 @@ void RunGeneratedStressStatistics() {
 }
 
 void RunFileStatistics() {
-    std::cout << "Enter file path with space-separated numbers:\n";
+    std::cout << "Путь к файлу с числами:\n";
     std::string path;
     std::cin >> path;
 
@@ -139,7 +152,7 @@ void RunFileStatistics() {
     stream.Close();
 
     if (statistics.IsEmpty()) {
-        std::cout << "No numbers were read.\n";
+        std::cout << "Числа не найдены.\n";
         return;
     }
 
@@ -147,7 +160,7 @@ void RunFileStatistics() {
 }
 
 void RunManualStatistics() {
-    std::cout << "Enter numbers separated by spaces:\n";
+    std::cout << "Введите числа через пробел:\n";
     std::string line;
     std::getline(std::cin >> std::ws, line);
 
@@ -160,7 +173,7 @@ void RunManualStatistics() {
     stream.Close();
 
     if (statistics.IsEmpty()) {
-        std::cout << "No numbers were read.\n";
+        std::cout << "Числа не найдены.\n";
         return;
     }
 
@@ -168,17 +181,18 @@ void RunManualStatistics() {
 }
 
 void PrintMenu() {
-    std::cout << "1. Run automatic tests\n";
-    std::cout << "2. Show LazySequence demos\n";
-    std::cout << "3. Collect stream statistics manually\n";
-    std::cout << "4. Run prepared statistics datasets\n";
-    std::cout << "5. Run generated stress stream\n";
-    std::cout << "6. Collect stream statistics from file\n";
-    std::cout << "0. Exit\n";
+    std::cout << "\nМеню\n";
+    std::cout << "1. Тесты\n";
+    std::cout << "2. Примеры LazySequence\n";
+    std::cout << "3. Статистика по введенным числам\n";
+    std::cout << "4. Готовые наборы чисел\n";
+    std::cout << "5. Статистика по генератору\n";
+    std::cout << "6. Статистика из файла\n";
+    std::cout << "0. Выход\n";
     std::cout << "> ";
 }
 
-}  //namespace
+}
 
 int main() {
     while (true) {
@@ -195,7 +209,7 @@ int main() {
             }
             if (command == 1) {
                 RunAllTests();
-                std::cout << "All tests passed.\n";
+                std::cout << "Тесты прошли.\n";
             } else if (command == 2) {
                 PrintLazySequenceDemos();
             } else if (command == 3) {
@@ -207,10 +221,10 @@ int main() {
             } else if (command == 6) {
                 RunFileStatistics();
             } else {
-                std::cout << "Unknown command.\n";
+                std::cout << "Нет такого пункта.\n";
             }
         } catch (const std::exception& error) {
-            std::cout << "Error: " << error.what() << "\n";
+            std::cout << "Ошибка: " << error.what() << "\n";
         }
     }
 }

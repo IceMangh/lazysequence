@@ -88,9 +88,9 @@ void TestLazyEditingOperations() {
     int data[] = {2, 3};
     const LazySequence<int> original(data, 2);
 
-    LazySequence<int> prepended = original.prepend(1);
-    LazySequence<int> appended = prepended.append(4);
-    LazySequence<int> inserted = appended.insertAt(99, 2);
+    LazySequence<int> prepended = original.PrependItem(1);
+    LazySequence<int> appended = prepended.AppendItem(4);
+    LazySequence<int> inserted = appended.InsertItemAt(99, 2);
 
     assert(original.GetLength() == 2);
     assert(original.Get(0) == 2);
@@ -107,9 +107,9 @@ void TestSubsequenceAndConcat() {
     LazySequence<int> left(leftData, 3);
     LazySequence<int> right(rightData, 2);
 
-    LazySequence<int> sub = left.subsequence(1, 2);
-    LazySequence<int> joined = left.concat(right);
-    LazySequence<int> insertedIntoJoined = joined.insertAt(99, 4);
+    LazySequence<int> sub = left.Subsequence(1, 2);
+    LazySequence<int> joined = left.Concat(right);
+    LazySequence<int> insertedIntoJoined = joined.InsertItemAt(99, 4);
 
     assert(sub.GetLength() == 2);
     assert(sub.Get(0) == 2);
@@ -132,8 +132,8 @@ void TestInfiniteInsertAndAppend() {
         },
         firstItems);
 
-    LazySequence<int> inserted = naturalNumbers.insertAt(99, 2);
-    LazySequence<int> appended = naturalNumbers.append(500);
+    LazySequence<int> inserted = naturalNumbers.InsertItemAt(99, 2);
+    LazySequence<int> appended = naturalNumbers.AppendItem(500);
 
     assert(inserted.Get(0) == 1);
     assert(inserted.Get(1) == 2);
@@ -144,7 +144,7 @@ void TestInfiniteInsertAndAppend() {
     assert(appended.GetLengthOrdinal() == Ordinal(1, 1));
     assert(appended.Get(Ordinal::Omega()) == 500);
 
-    LazySequence<int> appendedTwice = appended.append(600);
+    LazySequence<int> appendedTwice = appended.AppendItem(600);
     assert(appendedTwice.GetLengthOrdinal() == Ordinal(1, 2));
     assert(appendedTwice.Get(Ordinal(1, 0)) == 500);
     assert(appendedTwice.Get(Ordinal(1, 1)) == 600);
@@ -168,7 +168,7 @@ void TestInfiniteConcatJump() {
         },
         tensFirstItems);
 
-    LazySequence<int> joined = naturalNumbers.concat(tens);
+    LazySequence<int> joined = naturalNumbers.Concat(tens);
 
     assert(!joined.GetLengthOrdinal().IsFinite());
     assert(joined.HasConcatParts());
@@ -205,8 +205,8 @@ void TestThreeInfiniteConcatJump() {
         },
         hundredsFirstItems);
 
-    LazySequence<int> firstJoin = naturalNumbers.concat(tens);
-    LazySequence<int> secondJoin = firstJoin.concat(hundreds);
+    LazySequence<int> firstJoin = naturalNumbers.Concat(tens);
+    LazySequence<int> secondJoin = firstJoin.Concat(hundreds);
 
     assert(!secondJoin.GetLengthOrdinal().IsFinite());
     assert(secondJoin.HasConcatParts());
@@ -223,11 +223,11 @@ void TestMapWhereZipReduce() {
     int data[] = {1, 2, 3, 4};
     LazySequence<int> sequence(data, 4);
 
-    LazySequence<int> squares = sequence.map([](int value) {
+    LazySequence<int> squares = sequence.Map<int>([](int value) {
         return value * value;
     });
-    LazySequence<int> evens = sequence.where(IsEven);
-    LazySequence<std::pair<int, int>> zipped = sequence.zip(squares);
+    LazySequence<int> evens = sequence.Where(IsEven);
+    LazySequence<std::pair<int, int>> zipped = sequence.Zip(squares);
 
     assert(squares.Get(2) == 9);
     assert(evens.GetLength() == 2);
@@ -265,13 +265,13 @@ void TestOrdinalProviderMapZipAndSubsequence() {
             return 3000 + static_cast<int>(index.FiniteValue());
         });
 
-    LazySequence<int> firstJoin = first.concat(second);
-    LazySequence<int> all = firstJoin.concat(third);
-    LazySequence<int> mapped = all.map([](int value) {
+    LazySequence<int> firstJoin = first.Concat(second);
+    LazySequence<int> all = firstJoin.Concat(third);
+    LazySequence<int> mapped = all.Map<int>([](int value) {
         return value * 10;
     });
-    LazySequence<std::pair<int, int>> zipped = all.zip(mapped);
-    LazySequence<int> sliced = all.subsequence(Ordinal(1, 2), Ordinal(2, 1));
+    LazySequence<std::pair<int, int>> zipped = all.Zip(mapped);
+    LazySequence<int> sliced = all.Subsequence(Ordinal(1, 2), Ordinal(2, 1));
 
     assert(mapped.Get(Ordinal(2, 3)) == 30030);
     assert(zipped.Get(Ordinal(1, 2)).first == 2002);
@@ -294,10 +294,10 @@ void TestOrdinalInsertAndWhereOverConcat() {
             return 100 + static_cast<int>(index.FiniteValue());
         });
 
-    LazySequence<int> insertedInside = naturals.insertAt(77, 2);
-    LazySequence<int> insertedAtOmega = naturals.insertAt(88, Ordinal::Omega());
-    LazySequence<int> joined = naturals.concat(tens);
-    LazySequence<int> evens = joined.where([](int value) {
+    LazySequence<int> insertedInside = naturals.InsertItemAt(77, 2);
+    LazySequence<int> insertedAtOmega = naturals.InsertItemAt(88, Ordinal::Omega());
+    LazySequence<int> joined = naturals.Concat(tens);
+    LazySequence<int> evens = joined.Where([](int value) {
         return value % 2 == 0;
     });
 
@@ -315,135 +315,31 @@ void TestOrdinalInsertAndWhereOverConcat() {
     assert(evens.Get(Ordinal(1, 2)) == 104);
 }
 
-void AssertFiniteGeneratorValues(Generator<int>& generator, const int* expected, int count) {
-    generator.Reset(0);
-    assert(generator.GetLengthOrdinal().FiniteValue() == static_cast<std::size_t>(count));
-    for (int i = 0; i < count; ++i) {
-        assert(generator.HasNext());
-        assert(generator.GetNext() == expected[i]);
-    }
-    assert(!generator.HasNext());
-    assert(!generator.TryGetNext());
-}
+void TestGeneratorAccess() {
+    LazySequence<int> owner(
+        Ordinal::Finite(3),
+        [](const Ordinal& index) {
+            return 10 + static_cast<int>(index.FiniteValue());
+        });
+    Generator<int> generator(
+        &owner,
+        owner.GetLengthOrdinal(),
+        [](const Ordinal& index) {
+            return 10 + static_cast<int>(index.FiniteValue());
+        });
 
-void TestGeneratorAppendItem() {
-    int data[] = {1, 2, 3};
-    LazySequence<int> owner(data, 3);
-    Generator<int> generator(&owner, owner.GetLengthOrdinal(), [](const Ordinal&) {
-        return 0;
-    });
+    assert(generator.Get(Ordinal::Finite(1)) == 11);
+    assert(generator.GetNext() == 10);
+    assert(generator.GetNext() == 11);
+    assert(generator.GetNext() == 12);
 
-    Generator<int> appended = generator.Append(4);
-    int expected[] = {1, 2, 3, 4};
-    AssertFiniteGeneratorValues(appended, expected, 4);
-}
-
-void TestGeneratorAppendSequence() {
-    int data[] = {1, 2};
-    int suffixData[] = {3, 4, 5};
-    LazySequence<int> owner(data, 2);
-    MutableArraySequence<int> suffix(suffixData, 3);
-    Generator<int> generator(&owner, owner.GetLengthOrdinal(), [](const Ordinal&) {
-        return 0;
-    });
-
-    Generator<int> appended = generator.Append(&suffix);
-    int expected[] = {1, 2, 3, 4, 5};
-    AssertFiniteGeneratorValues(appended, expected, 5);
-}
-
-void TestGeneratorInsertItem() {
-    int data[] = {1, 3};
-    LazySequence<int> owner(data, 2);
-    Generator<int> generator(&owner, owner.GetLengthOrdinal(), [](const Ordinal&) {
-        return 0;
-    });
-
-    generator.Reset(1);
-    Generator<int> inserted = generator.Insert(2);
-    int expected[] = {1, 2, 3};
-    AssertFiniteGeneratorValues(inserted, expected, 3);
-}
-
-void TestGeneratorInsertSequence() {
-    int data[] = {1, 4, 5};
-    int middleData[] = {2, 3};
-    LazySequence<int> owner(data, 3);
-    MutableArraySequence<int> middle(middleData, 2);
-    Generator<int> generator(&owner, owner.GetLengthOrdinal(), [](const Ordinal&) {
-        return 0;
-    });
-
-    generator.Reset(1);
-    Generator<int> inserted = generator.Insert(&middle);
-    int expected[] = {1, 2, 3, 4, 5};
-    AssertFiniteGeneratorValues(inserted, expected, 5);
-}
-
-void TestGeneratorRemoveItem() {
-    int data[] = {1, 2, 3, 4};
-    LazySequence<int> owner(data, 4);
-    Generator<int> generator(&owner, owner.GetLengthOrdinal(), [](const Ordinal&) {
-        return 0;
-    });
-
-    generator.Reset(1);
-    Generator<int> removed = generator.Remove(2);
-    int expected[] = {1, 3, 4};
-    AssertFiniteGeneratorValues(removed, expected, 3);
-}
-
-void TestGeneratorRemoveSequence() {
-    int data[] = {1, 2, 3, 4, 5};
-    int removedData[] = {2, 3};
-    LazySequence<int> owner(data, 5);
-    MutableArraySequence<int> removedItems(removedData, 2);
-    Generator<int> generator(&owner, owner.GetLengthOrdinal(), [](const Ordinal&) {
-        return 0;
-    });
-
-    generator.Reset(1);
-    Generator<int> removed = generator.Remove(&removedItems);
-    int expected[] = {1, 4, 5};
-    AssertFiniteGeneratorValues(removed, expected, 3);
-}
-
-void TestGeneratorOperationExceptions() {
-    int data[] = {1};
-    LazySequence<int> owner(data, 1);
-    Generator<int> generator(&owner, owner.GetLengthOrdinal(), [](const Ordinal&) {
-        return 0;
-    });
-    Sequence<int>* nullSequence = nullptr;
-
-    bool appendNullThrown = false;
+    bool thrown = false;
     try {
-        Generator<int> appended = generator.Append(nullSequence);
-        (void)appended;
-    } catch (const std::invalid_argument&) {
-        appendNullThrown = true;
-    }
-    assert(appendNullThrown);
-
-    bool insertOutOfRangeThrown = false;
-    generator.Reset(2);
-    try {
-        Generator<int> inserted = generator.Insert(9);
-        (void)inserted;
+        generator.GetNext();
     } catch (const IndexOutOfRange&) {
-        insertOutOfRangeThrown = true;
+        thrown = true;
     }
-    assert(insertOutOfRangeThrown);
-
-    bool removeOutOfRangeThrown = false;
-    generator.Reset(1);
-    try {
-        Generator<int> removed = generator.Remove(1);
-        (void)removed;
-    } catch (const IndexOutOfRange&) {
-        removeOutOfRangeThrown = true;
-    }
-    assert(removeOutOfRangeThrown);
+    assert(thrown);
 }
 
 void TestStreams() {
@@ -572,13 +468,7 @@ void RunAllTests() {
     TestMapWhereZipReduce();
     TestOrdinalProviderMapZipAndSubsequence();
     TestOrdinalInsertAndWhereOverConcat();
-    TestGeneratorAppendItem();
-    TestGeneratorAppendSequence();
-    TestGeneratorInsertItem();
-    TestGeneratorInsertSequence();
-    TestGeneratorRemoveItem();
-    TestGeneratorRemoveSequence();
-    TestGeneratorOperationExceptions();
+    TestGeneratorAccess();
     TestStreams();
     TestStringStreamAndWriteStream();
     TestOnlineStatistics();

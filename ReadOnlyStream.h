@@ -46,7 +46,7 @@ private:
 
     static const Sequence<T>& RequireSequence(const Sequence<T>* sequence) {
         if (sequence == nullptr) {
-            throw std::invalid_argument("Sequence pointer is null");
+            throw std::invalid_argument("null sequence");
         }
         return *sequence;
     }
@@ -115,7 +115,7 @@ public:
         if (mode_ == Mode::File) {
             input_.open(filePath_);
             if (!input_) {
-                throw std::runtime_error("Cannot open stream file");
+                throw std::runtime_error("open failed");
             }
         }
         position_ = 0;
@@ -177,7 +177,7 @@ public:
 
     std::size_t Seek(std::size_t index) {
         if (!canSeek_) {
-            throw std::logic_error("Stream cannot seek");
+            throw std::logic_error("seek failed");
         }
         if (hasLength_ && index > length_) {
             throw EndOfStream();

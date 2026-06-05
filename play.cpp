@@ -1,5 +1,6 @@
 #include "LazySequence.h"
 
+#include <cstddef>
 #include <iostream>
 
 int FibonacciRule(Sequence<int>* history) {
@@ -38,23 +39,28 @@ int main() {
             return value * value;
         });
 
-    int data[] = {1, 2, 3};
-    LazySequence<int> first(data, 3);
+    LazySequence<int> interleaved(
+        Ordinal::Omega(),
+        [&fibonacci, &powersOfTwo, &squares](const Ordinal& index) -> int {
+            if (!index.IsFinite()) {
+                throw IndexOutOfRange();
+            }
+            const std::size_t number = index.FiniteValue();
+            const Ordinal sourceIndex = Ordinal::Finite(number / 3);
+            const std::size_t sourceNumber = number % 3;
+
+            if (sourceNumber == 0) {
+                return fibonacci.Get(sourceIndex);
+            }
+            if (sourceNumber == 1) {
+                return powersOfTwo.Get(sourceIndex);
+            }
+            return squares.Get(sourceIndex);
+        });
 
     PrintFirstItems("Fibonacci", fibonacci, 10);
     PrintFirstItems("Powers of two", powersOfTwo, 10);
     PrintFirstItems("Squares", squares, 10);
-
-    std::cout << "fibonacci.Get(9) = " << fibonacci.Get(9) << '\n';
-    std::cout << "powersOfTwo.Get(10) = " << powersOfTwo.Get(10) << '\n';
-    std::cout << "squares.Get(12) = " << squares.Get(12) << '\n';
-    std::cout << "first.Get(1) = " << first.Get(1) << '\n';
-
-    LazySequence<int> firstJoin = fibonacci.concat(powersOfTwo);
-    LazySequence<int> result = firstJoin.concat(first);
-
-    std::cout << result.Get(Ordinal(1, 5)) << std::endl;
-    std::cout << result.GetLengthOrdinal().ToString() << std::endl;
-    std::cout << result.GetConcatPart(0, 5) << std::endl;
+    PrintFirstItems("Interleaved", interleaved, 28);
     return 0;
 }
