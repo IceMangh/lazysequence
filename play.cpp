@@ -42,17 +42,17 @@ int main() {
     LazySequence<int> interleaved(
         Ordinal::Omega(),
         [&A, &B, &C](const Ordinal& index) -> int {
-            const std::size_t number = index.FiniteValue();
-            const Ordinal sourceIndex = Ordinal::Finite(number / 3);
-            const std::size_t sourceNumber = number % 3;
+            const int indexNumber = static_cast<int>(index.FiniteValue());
+            const int itemIndex = indexNumber / 3;
+            const int sequenceNumber = indexNumber % 3;
 
-            if (sourceNumber == 0) {
-                return A.Get(sourceIndex);
+            if (sequenceNumber == 0) {
+                return A.Get(itemIndex);
             }
-            if (sourceNumber == 1) {
-                return B.Get(sourceIndex);
+            if (sequenceNumber == 1) {
+                return B.Get(itemIndex);
             }
-            return C.Get(sourceIndex);
+            return C.Get(itemIndex);
         });
 
     PrintFirstItems("Fibonacci", A, 10);
