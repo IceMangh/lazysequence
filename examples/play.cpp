@@ -39,17 +39,17 @@ int main() {
             return value * value;
         });
 
-    LazySequence<int> interleaved(
+    LazySequence<int> ABC(
         Ordinal::Omega(),
-        [&A, &B, &C](const Ordinal& index) -> int {
+        [A, B, C](const Ordinal& index) -> int {
             const int indexNumber = static_cast<int>(index.FiniteValue());
             const int itemIndex = indexNumber / 3;
-            const int sequenceNumber = indexNumber % 3;
+            const int abcNumber = indexNumber % 3;
 
-            if (sequenceNumber == 0) {
+            if (abcNumber == 0) {
                 return A.Get(itemIndex);
             }
-            if (sequenceNumber == 1) {
+            if (abcNumber == 1) {
                 return B.Get(itemIndex);
             }
             return C.Get(itemIndex);
@@ -58,6 +58,6 @@ int main() {
     PrintFirstItems("Fibonacci", A, 10);
     PrintFirstItems("Two^", B, 10);
     PrintFirstItems("Squares", C, 10);
-    PrintFirstItems("Interleaved", interleaved, 28);
+    PrintFirstItems("ABC", ABC, 28);
     return 0;
 }

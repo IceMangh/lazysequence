@@ -171,11 +171,7 @@ void TestInfiniteConcatJump() {
     LazySequence<int> joined = naturalNumbers.Concat(tens);
 
     assert(!joined.GetLengthOrdinal().IsFinite());
-    assert(joined.HasConcatParts());
     assert(joined.Get(4) == 5);
-    assert(joined.GetConcatPart(0, 4) == 5);
-    assert(joined.GetConcatPart(1, 0) == 10);
-    assert(joined.GetConcatPart(1, 3) == 40);
     assert(joined.GetLengthOrdinal() == Ordinal(2, 0));
     assert(joined.Get(Ordinal::Omega()) == 10);
     assert(joined.Get(Ordinal(1, 3)) == 40);
@@ -209,12 +205,9 @@ void TestThreeInfiniteConcatJump() {
     LazySequence<int> secondJoin = firstJoin.Concat(hundreds);
 
     assert(!secondJoin.GetLengthOrdinal().IsFinite());
-    assert(secondJoin.HasConcatParts());
     assert(secondJoin.Get(4) == 5);
-    assert(secondJoin.GetConcatPart(1, 2) == 300);
-    assert(secondJoin.GetConcatPart(0, 4) == 5);
-    assert(secondJoin.GetConcatPart(0, 1) == 2);
     assert(secondJoin.GetLengthOrdinal() == Ordinal(3, 0));
+    assert(secondJoin.Get(Ordinal(1, 2)) == 30);
     assert(secondJoin.Get(Ordinal(2, 0)) == 100);
     assert(secondJoin.Get(Ordinal(2, 2)) == 300);
 }

@@ -16,25 +16,34 @@ set(ADT_HEADERS
 
 add_executable(lazysequence
         main.cpp
-        Tests.cpp
+        tests/Tests.cpp
         ${ADT_HEADERS}
-        BinaryHeap.h
-        DynamicArraySequenceView.h
-        Generator.h
-        LazySequence.h
-        Ordinal.h
-        OnlineStatisticsSnapshot.h
-        Streams.h
-        StreamExceptions.h
-        ReadOnlyStream.h
-        OnlineStatistics.h
-        WriteOnlyStream.h
-        Tests.h)
+        containers/BinaryHeap.h
+        lazy/DynamicArraySequenceView.h
+        lazy/Generator.h
+        lazy/LazySequence.h
+        lazy/LazySequenceProviders.h
+        lazy/Ordinal.h
+        statistics/OnlineStatisticsSnapshot.h
+        streams/Streams.h
+        streams/StreamExceptions.h
+        streams/ReadOnlyStream.h
+        statistics/OnlineStatistics.h
+        streams/WriteOnlyStream.h
+        tests/Tests.h)
 
-target_include_directories(lazysequence PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/adt)
+set(PROJECT_INCLUDE_DIRS
+        ${CMAKE_CURRENT_SOURCE_DIR}/adt
+        ${CMAKE_CURRENT_SOURCE_DIR}/containers
+        ${CMAKE_CURRENT_SOURCE_DIR}/lazy
+        ${CMAKE_CURRENT_SOURCE_DIR}/statistics
+        ${CMAKE_CURRENT_SOURCE_DIR}/streams
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+
+target_include_directories(lazysequence PRIVATE ${PROJECT_INCLUDE_DIRS})
 
 add_executable(play
-        play.cpp
+        examples/play.cpp
         ${ADT_HEADERS})
 
-target_include_directories(play PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/adt)
+target_include_directories(play PRIVATE ${PROJECT_INCLUDE_DIRS})
