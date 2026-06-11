@@ -19,8 +19,8 @@ add_executable(lazysequence
         tests/Tests.cpp
         ${ADT_HEADERS}
         containers/BinaryHeap.h
-        lazy/DynamicArraySequenceView.h
         lazy/Generator.h
+        lazy/LazySequenceHistoryView.h
         lazy/LazySequence.h
         lazy/LazySequenceProviders.h
         lazy/Ordinal.h

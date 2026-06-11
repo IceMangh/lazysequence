@@ -76,19 +76,19 @@ public:
             while (true) {
                 const int left = index * 2 + 1;
                 const int right = left + 1;
-                int best = index;
+                int bestIndex = index;
 
-                if (left < size_ && HasHigherPriority(data_.Get(left), data_.Get(best))) {
-                    best = left;
+                if (left < size_ && HasHigherPriority(data_.Get(left), data_.Get(bestIndex))) {
+                    bestIndex = left;
                 }
-                if (right < size_ && HasHigherPriority(data_.Get(right), data_.Get(best))) {
-                    best = right;
+                if (right < size_ && HasHigherPriority(data_.Get(right), data_.Get(bestIndex))) {
+                    bestIndex = right;
                 }
-                if (best == index) {
+                if (bestIndex == index) {
                     break;
                 }
-                Swap(index, best);
-                index = best;
+                Swap(index, bestIndex);
+                index = bestIndex;
             }
         }
 

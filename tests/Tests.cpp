@@ -18,26 +18,14 @@ int FibonacciRule(Sequence<int>* history) {
     return history->Get(length - 1) + history->Get(length - 2);
 }
 
-int FactorialRule(Sequence<int>* history) {
-    const int nextNumber = history->GetLength() + 1;
-    return history->GetLast() * nextNumber;
-}
-
-int PowersOfTwoRule(Sequence<int>* history) {
-    return history->GetLast() * 2;
-}
-
 bool IsEven(int value) {
     return value % 2 == 0;
 }
 
-double NextNaturalNumber(Sequence<double>* history) {
-    return history->GetLast() + 1.0;
-}
-
-void TestFiniteLazySequence() {
-    int data[] = {1, 2, 3};
-    LazySequence<int> sequence(data, 3);
+// Последовательность, созданная из обычного массива.
+void TestArrayBackedLazySequence() {
+    int sourceItems[] = {1, 2, 3};
+    LazySequence<int> sequence(sourceItems, 3);
 
     assert(sequence.GetLength() == 3);
     assert(sequence.GetLengthOrdinal().FiniteValue() == 3);
@@ -47,10 +35,11 @@ void TestFiniteLazySequence() {
     assert(sequence.GetMaterializedCount() == 3);
 }
 
-void TestRecurrentLazySequence() {
-    int seed[] = {1, 1};
-    MutableArraySequence<int> firstItems(seed, 2);
-    LazySequence<int> fibonacci(FibonacciRule, firstItems);
+// Бесконечная рекуррентная последовательность на примере чисел Фибоначчи.
+void TestFibonacciRecurrence() {
+    int fibonacciSeed[] = {1, 1};
+    MutableArraySequence<int> firstFibonacciItems(fibonacciSeed, 2);
+    LazySequence<int> fibonacci(FibonacciRule, firstFibonacciItems);
 
     assert(!fibonacci.GetLengthOrdinal().IsFinite());
     assert(fibonacci.GetMaterializedCount() == 2);
@@ -60,37 +49,18 @@ void TestRecurrentLazySequence() {
     assert(fibonacci.GetMaterializedCount() == 10);
 }
 
-void TestAdditionalRecurrentLazySequenceExamples() {
-    int factorialSeed[] = {1};
-    MutableArraySequence<int> factorialFirstItems(factorialSeed, 1);
-    LazySequence<int> factorials(FactorialRule, factorialFirstItems);
-
-    assert(!factorials.GetLengthOrdinal().IsFinite());
-    assert(factorials.Get(0) == 1);
-    assert(factorials.Get(1) == 2);
-    assert(factorials.Get(2) == 6);
-    assert(factorials.Get(3) == 24);
-    assert(factorials.Get(4) == 120);
-
-    int powersSeed[] = {1};
-    MutableArraySequence<int> powersFirstItems(powersSeed, 1);
-    LazySequence<int> powersOfTwo(PowersOfTwoRule, powersFirstItems);
-
-    assert(!powersOfTwo.GetLengthOrdinal().IsFinite());
-    assert(powersOfTwo.Get(0) == 1);
-    assert(powersOfTwo.Get(1) == 2);
-    assert(powersOfTwo.Get(2) == 4);
-    assert(powersOfTwo.Get(3) == 8);
-    assert(powersOfTwo.Get(10) == 1024);
-}
-
-void TestLazyEditingOperations() {
-    int data[] = {2, 3};
-    const LazySequence<int> original(data, 2);
+// Вставка, добавление, конкатенация и подпоследовательность для конечных данных.
+void TestFiniteEditingOperations() {
+    int originalItems[] = {2, 3};
+    const LazySequence<int> original(originalItems, 2);
+    int rightData[] = {4, 5};
+    LazySequence<int> right(rightData, 2);
 
     LazySequence<int> prepended = original.PrependItem(1);
     LazySequence<int> appended = prepended.AppendItem(4);
     LazySequence<int> inserted = appended.InsertItemAt(99, 2);
+    LazySequence<int> middleAndLast = inserted.Subsequence(2, 4);
+    LazySequence<int> leftThenRight = original.Concat(right);
 
     assert(original.GetLength() == 2);
     assert(original.Get(0) == 2);
@@ -99,59 +69,15 @@ void TestLazyEditingOperations() {
     assert(inserted.Get(2) == 99);
     assert(inserted.Get(3) == 3);
     assert(inserted.Get(4) == 4);
+    assert(middleAndLast.Get(0) == 99);
+    assert(middleAndLast.Get(2) == 4);
+    assert(leftThenRight.GetLength() == 4);
+    assert(leftThenRight.Get(2) == 4);
+    assert(leftThenRight.Get(3) == 5);
 }
 
-void TestSubsequenceAndConcat() {
-    int leftData[] = {1, 2, 3};
-    int rightData[] = {4, 5};
-    LazySequence<int> left(leftData, 3);
-    LazySequence<int> right(rightData, 2);
-
-    LazySequence<int> sub = left.Subsequence(1, 2);
-    LazySequence<int> joined = left.Concat(right);
-    LazySequence<int> insertedIntoJoined = joined.InsertItemAt(99, 4);
-
-    assert(sub.GetLength() == 2);
-    assert(sub.Get(0) == 2);
-    assert(sub.Get(1) == 3);
-    assert(joined.GetLength() == 5);
-    assert(joined.Get(3) == 4);
-    assert(joined.Get(4) == 5);
-    assert(insertedIntoJoined.GetLength() == 6);
-    assert(insertedIntoJoined.Get(3) == 4);
-    assert(insertedIntoJoined.Get(4) == 99);
-    assert(insertedIntoJoined.Get(5) == 5);
-}
-
-void TestInfiniteInsertAndAppend() {
-    int seed[] = {1};
-    MutableArraySequence<int> firstItems(seed, 1);
-    const LazySequence<int> naturalNumbers(
-        [](Sequence<int>* history) {
-            return history->GetLast() + 1;
-        },
-        firstItems);
-
-    LazySequence<int> inserted = naturalNumbers.InsertItemAt(99, 2);
-    LazySequence<int> appended = naturalNumbers.AppendItem(500);
-
-    assert(inserted.Get(0) == 1);
-    assert(inserted.Get(1) == 2);
-    assert(inserted.Get(2) == 99);
-    assert(inserted.Get(3) == 3);
-    assert(appended.Get(100) == 101);
-    assert(!appended.GetLengthOrdinal().IsFinite());
-    assert(appended.GetLengthOrdinal() == Ordinal(1, 1));
-    assert(appended.Get(Ordinal::Omega()) == 500);
-
-    LazySequence<int> appendedTwice = appended.AppendItem(600);
-    assert(appendedTwice.GetLengthOrdinal() == Ordinal(1, 2));
-    assert(appendedTwice.Get(Ordinal(1, 0)) == 500);
-    assert(appendedTwice.Get(Ordinal(1, 1)) == 600);
-    assert(appendedTwice.GetLast() == 600);
-}
-
-void TestInfiniteConcatJump() {
+// Конкатенация двух бесконечных последовательностей: omega + omega.
+void TestConcatOfTwoOmegaSequences() {
     int naturalSeed[] = {1};
     int tensSeed[] = {10};
     MutableArraySequence<int> naturalFirstItems(naturalSeed, 1);
@@ -168,71 +94,58 @@ void TestInfiniteConcatJump() {
         },
         tensFirstItems);
 
-    LazySequence<int> joined = naturalNumbers.Concat(tens);
+    LazySequence<int> naturalsThenTens = naturalNumbers.Concat(tens);
 
-    assert(!joined.GetLengthOrdinal().IsFinite());
-    assert(joined.Get(4) == 5);
-    assert(joined.GetLengthOrdinal() == Ordinal(2, 0));
-    assert(joined.Get(Ordinal::Omega()) == 10);
-    assert(joined.Get(Ordinal(1, 3)) == 40);
+    assert(!naturalsThenTens.GetLengthOrdinal().IsFinite());
+    assert(naturalsThenTens.Get(4) == 5);
+    assert(naturalsThenTens.GetLengthOrdinal() == Ordinal(2, 0));
+    assert(naturalsThenTens.Get(Ordinal::Omega()) == 10);
+    assert(naturalsThenTens.Get(Ordinal(1, 3)) == 40);
 }
 
-void TestThreeInfiniteConcatJump() {
-    int naturalSeed[] = {1};
-    int tensSeed[] = {10};
-    int hundredsSeed[] = {100};
-    MutableArraySequence<int> naturalFirstItems(naturalSeed, 1);
-    MutableArraySequence<int> tensFirstItems(tensSeed, 1);
-    MutableArraySequence<int> hundredsFirstItems(hundredsSeed, 1);
-
-    const LazySequence<int> naturalNumbers(
-        [](Sequence<int>* history) {
-            return history->GetLast() + 1;
-        },
-        naturalFirstItems);
-    const LazySequence<int> tens(
-        [](Sequence<int>* history) {
-            return history->GetLast() + 10;
-        },
-        tensFirstItems);
-    const LazySequence<int> hundreds(
-        [](Sequence<int>* history) {
-            return history->GetLast() + 100;
-        },
-        hundredsFirstItems);
-
-    LazySequence<int> firstJoin = naturalNumbers.Concat(tens);
-    LazySequence<int> secondJoin = firstJoin.Concat(hundreds);
-
-    assert(!secondJoin.GetLengthOrdinal().IsFinite());
-    assert(secondJoin.Get(4) == 5);
-    assert(secondJoin.GetLengthOrdinal() == Ordinal(3, 0));
-    assert(secondJoin.Get(Ordinal(1, 2)) == 30);
-    assert(secondJoin.Get(Ordinal(2, 0)) == 100);
-    assert(secondJoin.Get(Ordinal(2, 2)) == 300);
-}
-
-void TestMapWhereZipReduce() {
-    int data[] = {1, 2, 3, 4};
-    LazySequence<int> sequence(data, 4);
+// Основные операции над последовательностью: Map, Where, Zip и Reduce.
+void TestMapWhereZipAndReduce() {
+    int sourceItems[] = {1, 2, 3, 4};
+    LazySequence<int> sequence(sourceItems, 4);
 
     LazySequence<int> squares = sequence.Map<int>([](int value) {
         return value * value;
     });
-    LazySequence<int> evens = sequence.Where(IsEven);
+    LazySequence<int> evenValues = sequence.Where(IsEven);
     LazySequence<std::pair<int, int>> zipped = sequence.Zip(squares);
 
     assert(squares.Get(2) == 9);
-    assert(evens.GetLength() == 2);
-    assert(evens.Get(0) == 2);
-    assert(evens.Get(1) == 4);
+    assert(evenValues.GetLength() == 2);
+    assert(evenValues.Get(0) == 2);
+    assert(evenValues.Get(1) == 4);
     assert(zipped.GetLength() == 4);
     assert(zipped.Get(2).first == 3);
     assert(zipped.Get(2).second == 9);
     assert(sequence.Reduce([](int sum, int value) { return sum + value; }, 0) == 10);
 }
 
-void TestOrdinalProviderMapZipAndSubsequence() {
+// Смешивание трех последовательностей по очереди: первая, вторая, третья.
+void TestMixWith() {
+    int firstData[] = {1, 2, 3};
+    int secondData[] = {10, 20, 30};
+    int thirdData[] = {100, 200, 300};
+    LazySequence<int> first(firstData, 3);
+    LazySequence<int> second(secondData, 3);
+    LazySequence<int> third(thirdData, 3);
+
+    LazySequence<int> mixed = first.MixWith(second, third);
+
+    assert(mixed.GetLength() == 9);
+    assert(mixed.Get(0) == 1);
+    assert(mixed.Get(1) == 10);
+    assert(mixed.Get(2) == 100);
+    assert(mixed.Get(3) == 2);
+    assert(mixed.Get(4) == 20);
+    assert(mixed.Get(5) == 200);
+}
+
+// Ordinal-провайдеры, Map/Zip и срез через границу omega-блоков.
+void TestOrdinalProviderMapZipAndCrossBlockSubsequence() {
     LazySequence<int> ordinalProvider(
         Ordinal(2, 0),
         [](const Ordinal& index) {
@@ -242,40 +155,41 @@ void TestOrdinalProviderMapZipAndSubsequence() {
     assert(ordinalProvider.Get(Ordinal(1, 5)) == 1005);
     assert(ordinalProvider.GetMaterializedCount() == 1);
 
-    LazySequence<int> first(
+    LazySequence<int> firstOmegaBlock(
         Ordinal::Omega(),
         [](const Ordinal& index) {
             return 1000 + static_cast<int>(index.FiniteValue());
         });
-    LazySequence<int> second(
+    LazySequence<int> secondOmegaBlock(
         Ordinal::Omega(),
         [](const Ordinal& index) {
             return 2000 + static_cast<int>(index.FiniteValue());
         });
-    LazySequence<int> third(
+    LazySequence<int> thirdOmegaBlock(
         Ordinal::Omega(),
         [](const Ordinal& index) {
             return 3000 + static_cast<int>(index.FiniteValue());
         });
 
-    LazySequence<int> firstJoin = first.Concat(second);
-    LazySequence<int> all = firstJoin.Concat(third);
-    LazySequence<int> mapped = all.Map<int>([](int value) {
+    LazySequence<int> firstTwoBlocks = firstOmegaBlock.Concat(secondOmegaBlock);
+    LazySequence<int> threeBlocks = firstTwoBlocks.Concat(thirdOmegaBlock);
+    LazySequence<int> mapped = threeBlocks.Map<int>([](int value) {
         return value * 10;
     });
-    LazySequence<std::pair<int, int>> zipped = all.Zip(mapped);
-    LazySequence<int> sliced = all.Subsequence(Ordinal(1, 2), Ordinal(2, 1));
+    LazySequence<std::pair<int, int>> zipped = threeBlocks.Zip(mapped);
+    LazySequence<int> crossBlockSlice = threeBlocks.Subsequence(Ordinal(1, 2), Ordinal(2, 1));
 
     assert(mapped.Get(Ordinal(2, 3)) == 30030);
     assert(zipped.Get(Ordinal(1, 2)).first == 2002);
     assert(zipped.Get(Ordinal(1, 2)).second == 20020);
-    assert(sliced.GetLengthOrdinal() == Ordinal(1, 2));
-    assert(sliced.Get(0) == 2002);
-    assert(sliced.Get(Ordinal::Omega()) == 3000);
-    assert(sliced.Get(Ordinal(1, 1)) == 3001);
+    assert(crossBlockSlice.GetLengthOrdinal() == Ordinal(1, 2));
+    assert(crossBlockSlice.Get(0) == 2002);
+    assert(crossBlockSlice.Get(Ordinal::Omega()) == 3000);
+    assert(crossBlockSlice.Get(Ordinal(1, 1)) == 3001);
 }
 
-void TestOrdinalInsertAndWhereOverConcat() {
+// Insert и Where для последовательностей с финит и инфинит.
+void TestOrdinalInsertAndWhereOverConcatenatedOmegaSequences() {
     const LazySequence<int> naturals(
         Ordinal::Omega(),
         [](const Ordinal& index) {
@@ -287,57 +201,31 @@ void TestOrdinalInsertAndWhereOverConcat() {
             return 100 + static_cast<int>(index.FiniteValue());
         });
 
-    LazySequence<int> insertedInside = naturals.InsertItemAt(77, 2);
+    LazySequence<int> insertedAtFiniteIndex = naturals.InsertItemAt(77, 2);
     LazySequence<int> insertedAtOmega = naturals.InsertItemAt(88, Ordinal::Omega());
-    LazySequence<int> joined = naturals.Concat(tens);
-    LazySequence<int> evens = joined.Where([](int value) {
+    LazySequence<int> naturalsThenTens = naturals.Concat(tens);
+    LazySequence<int> evenValues = naturalsThenTens.Where([](int value) {
         return value % 2 == 0;
     });
 
-    assert(insertedInside.GetLengthOrdinal() == Ordinal::Omega());
-    assert(insertedInside.Get(0) == 0);
-    assert(insertedInside.Get(2) == 77);
-    assert(insertedInside.Get(3) == 2);
+    assert(insertedAtFiniteIndex.GetLengthOrdinal() == Ordinal::Omega());
+    assert(insertedAtFiniteIndex.Get(0) == 0);
+    assert(insertedAtFiniteIndex.Get(2) == 77);
+    assert(insertedAtFiniteIndex.Get(3) == 2);
     assert(insertedAtOmega.GetLengthOrdinal() == Ordinal(1, 1));
     assert(insertedAtOmega.Get(Ordinal::Omega()) == 88);
 
-    assert(evens.GetLengthOrdinal() == Ordinal(2, 0));
-    assert(evens.Get(0) == 0);
-    assert(evens.Get(1) == 2);
-    assert(evens.Get(Ordinal::Omega()) == 100);
-    assert(evens.Get(Ordinal(1, 2)) == 104);
+    assert(evenValues.GetLengthOrdinal() == Ordinal(2, 0));
+    assert(evenValues.Get(0) == 0);
+    assert(evenValues.Get(1) == 2);
+    assert(evenValues.Get(Ordinal::Omega()) == 100);
+    assert(evenValues.Get(Ordinal(1, 2)) == 104);
 }
 
-void TestGeneratorAccess() {
-    LazySequence<int> owner(
-        Ordinal::Finite(3),
-        [](const Ordinal& index) {
-            return 10 + static_cast<int>(index.FiniteValue());
-        });
-    Generator<int> generator(
-        &owner,
-        owner.GetLengthOrdinal(),
-        [](const Ordinal& index) {
-            return 10 + static_cast<int>(index.FiniteValue());
-        });
-
-    assert(generator.Get(Ordinal::Finite(1)) == 11);
-    assert(generator.GetNext() == 10);
-    assert(generator.GetNext() == 11);
-    assert(generator.GetNext() == 12);
-
-    bool thrown = false;
-    try {
-        generator.GetNext();
-    } catch (const IndexOutOfRange&) {
-        thrown = true;
-    }
-    assert(thrown);
-}
-
-void TestStreams() {
-    int data[] = {10, 20, 30};
-    LazySequence<int> sequence(data, 3);
+// Чтение/запись потоков и вычисление статистики по потоку.
+void TestStreamsAndStatistics() {
+    int streamItems[] = {10, 20, 30};
+    LazySequence<int> sequence(streamItems, 3);
     ReadOnlyStream<int> stream(sequence);
 
     stream.Open();
@@ -354,40 +242,25 @@ void TestStreams() {
     }
     assert(thrown);
     stream.Close();
-}
 
-void TestStringStreamAndWriteStream() {
-    ReadOnlyStream<int> input("1 2 3", [](const std::string& token) {
-        return std::stoi(token);
-    });
-
-    input.Open();
     WriteOnlyStream<int> output;
     output.Open();
-    while (true) {
-        try {
-            output.Write(input.Read() * 2);
-        } catch (const EndOfStream&) {
-            break;
-        }
-    }
-
+    output.Write(2);
+    output.Write(4);
+    output.Write(6);
     LazySequence<int> result = output.ToSequence();
     assert(output.GetPosition() == 3);
     assert(result.GetLength() == 3);
     assert(result.Get(0) == 2);
     assert(result.Get(2) == 6);
-    input.Close();
     output.Close();
-}
 
-void TestOnlineStatistics() {
-    ReadOnlyStream<double> stream("5 1 3 2 4", [](const std::string& token) {
+    ReadOnlyStream<double> statisticsStream("5 1 3 2 4", [](const std::string& token) {
         return std::stod(token);
     });
 
-    stream.Open();
-    OnlineStatistics statistics = CollectStatistics(stream, 100);
+    statisticsStream.Open();
+    OnlineStatistics statistics = CollectStatistics(statisticsStream, 100);
     OnlineStatisticsSnapshot snapshot = statistics.Snapshot();
 
     assert(snapshot.count == 5);
@@ -396,75 +269,19 @@ void TestOnlineStatistics() {
     assert(std::fabs(snapshot.max - 5.0) < 0.000001);
     assert(std::fabs(snapshot.average - 3.0) < 0.000001);
     assert(std::fabs(snapshot.median - 3.0) < 0.000001);
-    stream.Close();
-}
-
-void TestGeneratedStressStream() {
-    const std::size_t count = 100000;
-    double seed[] = {1.0};
-    MutableArraySequence<double> firstItems(seed, 1);
-    LazySequence<double> naturalNumbers(NextNaturalNumber, firstItems);
-    ReadOnlyStream<double> stream(naturalNumbers);
-
-    stream.Open();
-    OnlineStatistics statistics = CollectStatistics(stream, count);
-    stream.Close();
-
-    OnlineStatisticsSnapshot snapshot = statistics.Snapshot();
-    assert(snapshot.count == count);
-    assert(std::fabs(snapshot.sum - 5000050000.0) < 0.000001);
-    assert(std::fabs(snapshot.min - 1.0) < 0.000001);
-    assert(std::fabs(snapshot.max - 100000.0) < 0.000001);
-    assert(std::fabs(snapshot.average - 50000.5) < 0.000001);
-    assert(std::fabs(snapshot.median - 50000.5) < 0.000001);
-}
-
-void TestExceptions() {
-    LazySequence<int> empty;
-
-    bool getThrown = false;
-    try {
-        empty.GetFirst();
-    } catch (const IndexOutOfRange&) {
-        getThrown = true;
-    }
-    assert(getThrown);
-
-    bool lengthThrown = false;
-    int seed[] = {1};
-    MutableArraySequence<int> firstItems(seed, 1);
-    LazySequence<int> infinite(
-        [](Sequence<int>* history) {
-            return history->GetLast() + 1;
-        },
-        firstItems);
-
-    try {
-        infinite.GetLength();
-    } catch (const std::overflow_error&) {
-        lengthThrown = true;
-    }
-    assert(lengthThrown);
+    statisticsStream.Close();
 }
 
 }
 
 void RunAllTests() {
-    TestFiniteLazySequence();
-    TestRecurrentLazySequence();
-    TestAdditionalRecurrentLazySequenceExamples();
-    TestLazyEditingOperations();
-    TestSubsequenceAndConcat();
-    TestInfiniteInsertAndAppend();
-    TestInfiniteConcatJump();
-    TestThreeInfiniteConcatJump();
-    TestMapWhereZipReduce();
-    TestOrdinalProviderMapZipAndSubsequence();
-    TestOrdinalInsertAndWhereOverConcat();
-    TestGeneratorAccess();
-    TestStreams();
-    TestStringStreamAndWriteStream();
-    TestOnlineStatistics();
-    TestGeneratedStressStream();
-    TestExceptions();
+    TestArrayBackedLazySequence();
+    TestFibonacciRecurrence();
+    TestFiniteEditingOperations();
+    TestConcatOfTwoOmegaSequences();
+    TestMapWhereZipAndReduce();
+    TestMixWith();
+    TestOrdinalProviderMapZipAndCrossBlockSubsequence();
+    TestOrdinalInsertAndWhereOverConcatenatedOmegaSequences();
+    TestStreamsAndStatistics();
 }

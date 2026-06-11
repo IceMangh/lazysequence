@@ -167,14 +167,6 @@ public:
         return position_;
     }
 
-    bool IsCanSeek() const {
-        return canSeek_;
-    }
-
-    bool IsCanGoBack() const {
-        return canSeek_;
-    }
-
     std::size_t Seek(std::size_t index) {
         if (!canSeek_) {
             throw std::logic_error("seek failed");

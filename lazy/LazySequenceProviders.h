@@ -28,21 +28,27 @@ struct LazySequenceConcatProvider {
 };
 
 template <class T>
-struct LazySequencePairMaterializedCounter {
-    std::shared_ptr<const LazySequence<T>> left;
-    std::shared_ptr<const LazySequence<T>> right;
+struct LazySequenceMixedProvider {
+    std::shared_ptr<const LazySequence<T>> first;
+    std::shared_ptr<const LazySequence<T>> second;
+    std::shared_ptr<const LazySequence<T>> third;
 
-    std::size_t operator()() const {
-        return left->GetMaterializedCount() + right->GetMaterializedCount();
-    }
-};
+    T operator()(const Ordinal& index) const {
+        if (!index.IsFinite()) {
+            throw IndexOutOfRange();
+        }
 
-template <class T>
-struct LazySequenceSingleMaterializedCounter {
-    std::shared_ptr<const LazySequence<T>> source;
+        const int indexNumber = static_cast<int>(index.FiniteValue());
+        const int itemIndex = indexNumber / 3;
+        const int sequenceNumber = indexNumber % 3;
 
-    std::size_t operator()() const {
-        return source->GetMaterializedCount();
+        if (sequenceNumber == 0) {
+            return first->Get(itemIndex);
+        }
+        if (sequenceNumber == 1) {
+            return second->Get(itemIndex);
+        }
+        return third->Get(itemIndex);
     }
 };
 
@@ -129,15 +135,5 @@ struct LazySequenceZipProvider {
 
     std::pair<T, U> operator()(const Ordinal& index) const {
         return std::make_pair(left->Get(index), right->Get(index));
-    }
-};
-
-template <class T, class U>
-struct LazySequenceZipMaterializedCounter {
-    std::shared_ptr<const LazySequence<T>> left;
-    std::shared_ptr<const LazySequence<U>> right;
-
-    std::size_t operator()() const {
-        return left->GetMaterializedCount() + right->GetMaterializedCount();
     }
 };

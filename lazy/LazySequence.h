@@ -7,10 +7,9 @@
 #include <stdexcept>
 #include <utility>
 
-#include "DynamicArray.h"
-#include "DynamicArraySequenceView.h"
 #include "Exceptions.h"
 #include "Generator.h"
+#include "LazySequenceHistoryView.h"
 #include "LazySequenceProviders.h"
 #include "MutableArraySequence.h"
 #include "Ordinal.h"
@@ -21,24 +20,19 @@ class LazySequence : public Sequence<T> {
 private:
     friend class Generator<T>;
 
-    struct OrdinalCacheEntry {
-        Ordinal index;
+    struct OrdinalCacheCell {
+        bool hasValue;
         T value;
 
-        OrdinalCacheEntry() : index(), value() {}
-
-        OrdinalCacheEntry(const Ordinal& indexValue, const T& valueValue)
-            : index(indexValue), value(valueValue) {}
+        OrdinalCacheCell() : hasValue(false), value() {}
     };
 
-    mutable DynamicArray<T> cache_;
-    mutable int cacheLength_;
-    mutable DynamicArray<OrdinalCacheEntry> ordinalCache_;
+    mutable DynamicArray<DynamicArray<OrdinalCacheCell>> ordinalCache_;
+    mutable int finiteCacheLength_;
     mutable int ordinalCacheLength_;
     Ordinal lengthOrdinal_;
 
     std::unique_ptr<Generator<T>> generator_;
-    std::function<std::size_t()> dependencyMaterializedCount_;
 
     class Enumerator : public IEnumerator<T> {
     private:
@@ -52,8 +46,7 @@ private:
             if (index_ == std::numeric_limits<int>::max()) {
                 return false;
             }
-            if (sequence_->lengthOrdinal_.IsFinite() &&
-                static_cast<std::size_t>(index_ + 1) >= sequence_->lengthOrdinal_.FiniteValue()) {
+            if (sequence_->lengthOrdinal_.IsFinite() && static_cast<std::size_t>(index_ + 1) >= sequence_->lengthOrdinal_.FiniteValue()) {
                 return false;
             }
 
@@ -80,55 +73,56 @@ private:
         return std::make_shared<LazySequence<T>>(sequence);
     }
 
-    void AppendToCache(const T& item) const {
-        if (cacheLength_ == cache_.GetLength()) {
-            const int newCapacity = cache_.GetLength() == 0 ? 8 : cache_.GetLength() * 2;
-            cache_.Resize(newCapacity);
+    static int CheckedOrdinalPart(std::size_t value) {
+        if (value > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+            throw IndexOutOfRange();
         }
-
-        cache_.Set(cacheLength_, item);
-        ++cacheLength_;
+        return static_cast<int>(value);
     }
 
-    const T* FindOrdinalCache(const Ordinal& index) const {
-        for (int i = 0; i < ordinalCacheLength_; ++i) {
-            const OrdinalCacheEntry& entry = ordinalCache_.Get(i);
-            if (entry.index == index) {
-                return &entry.value;
-            }
+    OrdinalCacheCell& GetOrdinalCacheCell(const Ordinal& index) const {
+        const int block = CheckedOrdinalPart(index.OmegaBlocks());
+        const int offset = CheckedOrdinalPart(index.FiniteOffset());
+
+        if (ordinalCache_.GetLength() <= block) {
+            ordinalCache_.Resize(block + 1);
         }
-        return nullptr;
+
+        DynamicArray<OrdinalCacheCell>& blockCache = ordinalCache_[block];
+        if (blockCache.GetLength() <= offset) {
+            blockCache.Resize(offset + 1);
+        }
+
+        return blockCache[offset];
     }
 
-    const T& StoreOrdinalCache(const Ordinal& index, const T& value) const {
-        if (ordinalCacheLength_ == ordinalCache_.GetLength()) {
-            const int newCapacity = ordinalCache_.GetLength() == 0 ? 8 : ordinalCache_.GetLength() * 2;
-            ordinalCache_.Resize(newCapacity);
+    const T& StoreGeneratedValue(const Ordinal& index, const T& value) const {
+        OrdinalCacheCell& cell = GetOrdinalCacheCell(index);
+        if (!cell.hasValue) {
+            ++ordinalCacheLength_;
         }
-
-        ordinalCache_.Set(ordinalCacheLength_, OrdinalCacheEntry(index, value));
-        ++ordinalCacheLength_;
-        return ordinalCache_.Get(ordinalCacheLength_ - 1).value;
+        cell.value = value;
+        cell.hasValue = true;
+        return cell.value;
     }
 
     void CopyFromSequence(const Sequence<T>& sequence) {
         const int length = sequence.GetLength();
-        cache_.Resize(length);
+        ordinalCache_.Resize(0);
+        finiteCacheLength_ = 0;
+        ordinalCacheLength_ = 0;
 
         for (int i = 0; i < length; ++i) {
-            cache_.Set(i, sequence.Get(i));
+            StoreGeneratedValue(Ordinal::Finite(static_cast<std::size_t>(i)), sequence.Get(i));
         }
 
-        cacheLength_ = length;
-        ordinalCache_.Resize(0);
-        ordinalCacheLength_ = 0;
+        finiteCacheLength_ = length;
         lengthOrdinal_ = Ordinal::Finite(static_cast<std::size_t>(length));
         generator_.reset(nullptr);
-        dependencyMaterializedCount_ = nullptr;
     }
 
-    DynamicArraySequenceView<T> CreateHistoryView() const {
-        return DynamicArraySequenceView<T>(cache_, cacheLength_);
+    LazySequenceHistoryView<T> CreateHistoryView() const {
+        return LazySequenceHistoryView<T>(this, finiteCacheLength_);
     }
 
     T GenerateNext() const {
@@ -146,12 +140,12 @@ private:
     }
 
     const T& GetGeneratedOrdinal(const Ordinal& index) const {
-        const T* cached = FindOrdinalCache(index);
-        if (cached != nullptr) {
-            return *cached;
+        OrdinalCacheCell& cell = GetOrdinalCacheCell(index);
+        if (!cell.hasValue) {
+            return StoreGeneratedValue(index, GenerateAt(index));
         }
 
-        return StoreOrdinalCache(index, GenerateAt(index));
+        return cell.value;
     }
 
     LazySequence<T> Range(const Ordinal& startIndex, const Ordinal& rangeLength) const {
@@ -163,8 +157,7 @@ private:
         auto source = SharedCopy();
         return LazySequence<T>(
                 rangeLength,
-                LazySequenceRangeProvider<T>{source, startIndex},
-                LazySequenceSingleMaterializedCounter<T>{source});
+                LazySequenceRangeProvider<T>{source, startIndex});
     }
 
     void EnsureMaterialized(int index) const {
@@ -177,87 +170,69 @@ private:
             throw IndexOutOfRange();
         }
 
-        while (cacheLength_ <= index) {
-            AppendToCache(GenerateNext());
+        while (finiteCacheLength_ <= index) {
+            StoreGeneratedValue(Ordinal::Finite(static_cast<std::size_t>(finiteCacheLength_)), GenerateNext());
+            ++finiteCacheLength_;
         }
     }
 
 public:
     LazySequence()
-            : cache_(),
-              cacheLength_(0),
-              ordinalCache_(),
+            : ordinalCache_(),
+              finiteCacheLength_(0),
               ordinalCacheLength_(0),
               lengthOrdinal_(Ordinal::Finite(0)),
-              generator_(nullptr),
-              dependencyMaterializedCount_(nullptr) {}
+              generator_(nullptr) {}
 
     explicit LazySequence(Ordinal lengthOrdinal, std::function<T(const Ordinal&)> provider)
-            : cache_(),
-              cacheLength_(0),
-              ordinalCache_(),
+            : ordinalCache_(),
+              finiteCacheLength_(0),
               ordinalCacheLength_(0),
               lengthOrdinal_(lengthOrdinal),
-              generator_(new Generator<T>(this, lengthOrdinal_, provider)),
-              dependencyMaterializedCount_(nullptr) {}
-
-    LazySequence(Ordinal lengthOrdinal,
-                 std::function<T(const Ordinal&)> provider,
-                 std::function<std::size_t()> dependencyMaterializedCount)
-            : cache_(),
-              cacheLength_(0),
-              ordinalCache_(),
-              ordinalCacheLength_(0),
-              lengthOrdinal_(lengthOrdinal),
-              generator_(new Generator<T>(this, lengthOrdinal_, provider)),
-              dependencyMaterializedCount_(dependencyMaterializedCount) {}
+              generator_(new Generator<T>(this, lengthOrdinal_, provider)) {}
 
     LazySequence(const T* items, int count)
-            : cache_(items, count),
-              cacheLength_(count),
-              ordinalCache_(),
+            : ordinalCache_(),
+              finiteCacheLength_(0),
               ordinalCacheLength_(0),
               lengthOrdinal_(Ordinal::Finite(static_cast<std::size_t>(count))),
-              generator_(nullptr),
-              dependencyMaterializedCount_(nullptr) {}
+              generator_(nullptr) {
+        for (int i = 0; i < count; ++i) {
+            StoreGeneratedValue(Ordinal::Finite(static_cast<std::size_t>(i)), items[i]);
+        }
+        finiteCacheLength_ = count;
+    }
 
     explicit LazySequence(const Sequence<T>& sequence)
-            : cache_(),
-              cacheLength_(0),
-              ordinalCache_(),
+            : ordinalCache_(),
+              finiteCacheLength_(0),
               ordinalCacheLength_(0),
               lengthOrdinal_(Ordinal::Finite(0)),
-              generator_(nullptr),
-              dependencyMaterializedCount_(nullptr) {
+              generator_(nullptr) {
         CopyFromSequence(sequence);
     }
 
     LazySequence(std::function<T(Sequence<T>*)> rule, const Sequence<T>& firstItems)
-            : cache_(),
-              cacheLength_(0),
-              ordinalCache_(),
+            : ordinalCache_(),
+              finiteCacheLength_(0),
               ordinalCacheLength_(0),
               lengthOrdinal_(Ordinal::Omega()),
-              generator_(nullptr),
-              dependencyMaterializedCount_(nullptr) {
+              generator_(nullptr) {
         const int length = firstItems.GetLength();
-        cache_.Resize(length);
 
         for (int i = 0; i < length; ++i) {
-            cache_.Set(i, firstItems.Get(i));
+            StoreGeneratedValue(Ordinal::Finite(static_cast<std::size_t>(i)), firstItems.Get(i));
         }
-        cacheLength_ = length;
+        finiteCacheLength_ = length;
         generator_.reset(new Generator<T>(this, lengthOrdinal_, rule));
     }
 
     LazySequence(const LazySequence<T>& other)
-            : cache_(other.cache_),
-              cacheLength_(other.cacheLength_),
-              ordinalCache_(other.ordinalCache_),
+            : ordinalCache_(other.ordinalCache_),
+              finiteCacheLength_(other.finiteCacheLength_),
               ordinalCacheLength_(other.ordinalCacheLength_),
               lengthOrdinal_(other.lengthOrdinal_),
-              generator_(other.generator_ ? new Generator<T>(*other.generator_, this, static_cast<std::size_t>(other.cacheLength_)) : nullptr),
-              dependencyMaterializedCount_(other.dependencyMaterializedCount_) {}
+              generator_(other.generator_ ? new Generator<T>(*other.generator_, this, static_cast<std::size_t>(other.finiteCacheLength_)) : nullptr) {}
 
     ~LazySequence() override = default;
 
@@ -267,16 +242,14 @@ public:
         }
 
         Generator<T>* newGenerator = other.generator_
-                                     ? new Generator<T>(*other.generator_, this, static_cast<std::size_t>(other.cacheLength_))
+                                     ? new Generator<T>(*other.generator_, this, static_cast<std::size_t>(other.finiteCacheLength_))
                                      : nullptr;
 
-        cache_ = other.cache_;
-        cacheLength_ = other.cacheLength_;
         ordinalCache_ = other.ordinalCache_;
+        finiteCacheLength_ = other.finiteCacheLength_;
         ordinalCacheLength_ = other.ordinalCacheLength_;
         lengthOrdinal_ = other.lengthOrdinal_;
         generator_.reset(newGenerator);
-        dependencyMaterializedCount_ = other.dependencyMaterializedCount_;
         return *this;
     }
 
@@ -285,11 +258,7 @@ public:
     }
 
     std::size_t GetMaterializedCount() const {
-        std::size_t count = static_cast<std::size_t>(cacheLength_ + ordinalCacheLength_);
-        if (dependencyMaterializedCount_) {
-            count += dependencyMaterializedCount_();
-        }
-        return count;
+        return static_cast<std::size_t>(ordinalCacheLength_);
     }
 
     const T& GetFirst() const override {
@@ -323,7 +292,7 @@ public:
         if (index.IsFinite() && index.FiniteValue() <= static_cast<std::size_t>(std::numeric_limits<int>::max())) {
             const int finiteIndex = static_cast<int>(index.FiniteValue());
             EnsureMaterialized(finiteIndex);
-            return cache_.Get(finiteIndex);
+            return GetOrdinalCacheCell(index).value;
         }
 
         return GetGeneratedOrdinal(index);
@@ -397,8 +366,25 @@ public:
 
         return LazySequence<T>(
                 resultLength,
-                LazySequenceConcatProvider<T>{left, right, leftLength},
-                LazySequencePairMaterializedCounter<T>{left, right});
+                LazySequenceConcatProvider<T>{left, right, leftLength});
+    }
+
+    LazySequence<T> MixWith(const LazySequence<T>& second, const LazySequence<T>& third) const {
+        auto firstCopy = SharedCopy();
+        auto secondCopy = second.SharedCopy();
+        auto thirdCopy = third.SharedCopy();
+
+        const Ordinal shortestLength = MinOrdinal(
+                firstCopy->lengthOrdinal_,
+                MinOrdinal(secondCopy->lengthOrdinal_, thirdCopy->lengthOrdinal_));
+        Ordinal resultLength = Ordinal::Omega();
+        if (shortestLength.IsFinite()) {
+            resultLength = shortestLength.Add(shortestLength).Add(shortestLength);
+        }
+
+        return LazySequence<T>(
+                resultLength,
+                LazySequenceMixedProvider<T>{firstCopy, secondCopy, thirdCopy});
     }
 
     template <class Result, class Mapper>
@@ -406,8 +392,7 @@ public:
         auto source = SharedCopy();
         return LazySequence<Result>(
                 lengthOrdinal_,
-                LazySequenceMapProvider<T, Result, Mapper>{source, mapper},
-                LazySequenceSingleMaterializedCounter<T>{source});
+                LazySequenceMapProvider<T, Result, Mapper>{source, mapper});
     }
 
     template <class Reducer, class Accumulator>
@@ -449,8 +434,7 @@ public:
                 LazySequenceWhereProvider<T, Predicate>{
                         source,
                         predicate,
-                        state},
-                LazySequenceSingleMaterializedCounter<T>{source});
+                        state});
     }
 
     template <class U>
@@ -470,8 +454,7 @@ public:
         const Ordinal newLength = MinOrdinal(lengthOrdinal_, rightLength);
         return LazySequence<std::pair<T, U>>(
                 newLength,
-                LazySequenceZipProvider<T, U>{left, rightSequence},
-                LazySequenceZipMaterializedCounter<T, U>{left, rightSequence});
+                LazySequenceZipProvider<T, U>{left, rightSequence});
     }
 
 private:

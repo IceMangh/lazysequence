@@ -12,6 +12,27 @@ int PowersOfTwoRule(Sequence<int>* history) {
     return history->GetLast() * 2;
 }
 
+int NaturalNumbersRule(const Ordinal& index) {
+    return static_cast<int>(index.FiniteValue()) + 1;
+}
+
+int EvenNaturalNumbersRule(const Ordinal& index) {
+    return (static_cast<int>(index.FiniteValue()) + 1) * 2;
+}
+
+int OddNaturalNumbersRule(const Ordinal& index) {
+    return static_cast<int>(index.FiniteValue()) * 2 + 1;
+}
+
+int NegativeNumbersRule(const Ordinal& index) {
+    return -(static_cast<int>(index.FiniteValue()) + 1);
+}
+
+int SquaresRule(const Ordinal& index) {
+    const int value = static_cast<int>(index.FiniteValue());
+    return value * value;
+}
+
 void PrintFirstItems(const char* name, const LazySequence<int>& sequence, int count) {
     std::cout << name << ": ";
     for (int i = 0; i < count; ++i) {
@@ -26,38 +47,29 @@ void PrintFirstItems(const char* name, const LazySequence<int>& sequence, int co
 int main() {
     int fibonacciData[] = {1, 1};
     MutableArraySequence<int> fibonacciSeed(fibonacciData, 2);
-    LazySequence<int> A(FibonacciRule, fibonacciSeed);
+    LazySequence<int> fibonacci(FibonacciRule, fibonacciSeed);
 
     int powersData[] = {1};
     MutableArraySequence<int> powersSeed(powersData, 1);
-    LazySequence<int> B(PowersOfTwoRule, powersSeed);
+    LazySequence<int> powersOfTwo(PowersOfTwoRule, powersSeed);
 
-    LazySequence<int> C(
-        Ordinal::Omega(),
-        [](const Ordinal& index) {
-            const int value = static_cast<int>(index.FiniteValue());
-            return value * value;
-        });
+    LazySequence<int> squares(Ordinal::Omega(), SquaresRule);
 
-    LazySequence<int> ABC(
-        Ordinal::Omega(),
-        [A, B, C](const Ordinal& index) -> int {
-            const int indexNumber = static_cast<int>(index.FiniteValue());
-            const int itemIndex = indexNumber / 3;
-            const int abcNumber = indexNumber % 3;
+    LazySequence<int> mixed = fibonacci.MixWith(powersOfTwo, squares);
 
-            if (abcNumber == 0) {
-                return A.Get(itemIndex);
-            }
-            if (abcNumber == 1) {
-                return B.Get(itemIndex);
-            }
-            return C.Get(itemIndex);
-        });
+    PrintFirstItems("mixed", mixed, 10);
 
-    PrintFirstItems("Fibonacci", A, 10);
-    PrintFirstItems("Two^", B, 10);
-    PrintFirstItems("Squares", C, 10);
-    PrintFirstItems("ABC", ABC, 28);
+    LazySequence<int> naturals(Ordinal::Omega(), NaturalNumbersRule);
+    LazySequence<int> evens(Ordinal::Omega(), EvenNaturalNumbersRule);
+    LazySequence<int> odds(Ordinal::Omega(), OddNaturalNumbersRule);
+    LazySequence<int> negatives(Ordinal::Omega(), NegativeNumbersRule);
+
+    LazySequence<int> A = naturals.Concat(negatives);
+    PrintFirstItems("A", A, 10);
+
+    LazySequence<int> B = A.AppendItem(42);
+    B = B.AppendItem(32);
+    std::cout << B.Get(Ordinal(1, 5)) << std::endl;
+    std::cout << B.Get(Ordinal(2, 1)) << std::endl;
     return 0;
 }
