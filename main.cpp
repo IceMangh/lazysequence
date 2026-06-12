@@ -2,6 +2,7 @@
 #include <exception>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <string>
 
 #include "LazySequence.h"
@@ -42,6 +43,18 @@ void PrintSnapshot(const OnlineStatisticsSnapshot& snapshot) {
     std::cout << "Максимум: " << snapshot.max << "\n";
     std::cout << "Среднее: " << snapshot.average << "\n";
     std::cout << "Медиана: " << snapshot.median << "\n";
+}
+
+MutableArraySequence<double> ParseDoubleSequence(const std::string& text) {
+    MutableArraySequence<double> values;
+    std::istringstream input(text);
+    std::string token;
+
+    while (input >> token) {
+        values.Append(std::stod(token));
+    }
+
+    return values;
 }
 
 void PrintFibonacciDemo() {
@@ -85,9 +98,8 @@ void PrintLazySequenceDemos() {
 }
 
 OnlineStatisticsSnapshot CollectStatisticsFromText(const std::string& text) {
-    ReadOnlyStream<double> stream(text, [](const std::string& token) {
-        return std::stod(token);
-    });
+    MutableArraySequence<double> values = ParseDoubleSequence(text);
+    ReadOnlyStream<double> stream(values);
 
     stream.Open();
     OnlineStatistics statistics = CollectStatistics(stream, std::numeric_limits<std::size_t>::max());
@@ -164,9 +176,8 @@ void RunManualStatistics() {
     std::string line;
     std::getline(std::cin >> std::ws, line);
 
-    ReadOnlyStream<double> stream(line, [](const std::string& token) {
-        return std::stod(token);
-    });
+    MutableArraySequence<double> values = ParseDoubleSequence(line);
+    ReadOnlyStream<double> stream(values);
 
     stream.Open();
     OnlineStatistics statistics = CollectStatistics(stream, std::numeric_limits<std::size_t>::max());

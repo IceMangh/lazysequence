@@ -1,12 +1,7 @@
 #pragma once
 
-#include <cstddef>
-#include <limits>
 #include <memory>
 #include <utility>
-#include <vector>
-
-#include "DynamicArray.h"
 #include "Exceptions.h"
 #include "Ordinal.h"
 
@@ -69,62 +64,6 @@ struct LazySequenceMapProvider {
 
     Result operator()(const Ordinal& index) const {
         return mapper(source->Get(index));
-    }
-};
-
-template <class T>
-struct LazySequenceWhereBlock {
-    DynamicArray<T> accepted;
-    int acceptedLength = 0;
-    std::size_t scannedOffset = 0;
-
-    void Append(const T& value) {
-        if (acceptedLength == accepted.GetLength()) {
-            const int newCapacity = accepted.GetLength() == 0 ? 8 : accepted.GetLength() * 2;
-            accepted.Resize(newCapacity);
-        }
-
-        accepted.Set(acceptedLength, value);
-        ++acceptedLength;
-    }
-};
-
-template <class T>
-struct LazySequenceWhereState {
-    std::vector<LazySequenceWhereBlock<T>> blocks;
-
-    LazySequenceWhereBlock<T>& Block(std::size_t blockIndex) {
-        if (blocks.size() <= blockIndex) {
-            blocks.resize(blockIndex + 1);
-        }
-        return blocks[blockIndex];
-    }
-};
-
-template <class T, class Predicate>
-struct LazySequenceWhereProvider {
-    std::shared_ptr<const LazySequence<T>> source;
-    Predicate predicate;
-    std::shared_ptr<LazySequenceWhereState<T>> state;
-
-    T operator()(const Ordinal& index) const {
-        if (index.FiniteOffset() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-            throw IndexOutOfRange();
-        }
-        const std::size_t blockIndex = index.OmegaBlocks();
-        const int requestedOffset = static_cast<int>(index.FiniteOffset());
-        LazySequenceWhereBlock<T>& block = state->Block(blockIndex);
-
-        while (block.acceptedLength <= requestedOffset) {
-            T value = source->Get(Ordinal(blockIndex, block.scannedOffset));
-            ++block.scannedOffset;
-
-            if (predicate(value)) {
-                block.Append(value);
-            }
-        }
-
-        return block.accepted.Get(requestedOffset);
     }
 };
 

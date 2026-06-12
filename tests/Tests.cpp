@@ -49,6 +49,43 @@ void TestFibonacciRecurrence() {
     assert(fibonacci.GetMaterializedCount() == 10);
 }
 
+// Копия рекуррентной последовательности должна строить историю из своей копии.
+void TestRecurrentGeneratorCopyUsesCopiedHistory() {
+    int seed[] = {2};
+    MutableArraySequence<int> firstItems(seed, 1);
+    LazySequence<int> source(
+        [](Sequence<int>* history) {
+            return history->GetLast() + 3;
+        },
+        firstItems);
+
+    LazySequence<int> copy(source);
+
+    assert(source.GetMaterializedCount() == 1);
+    assert(copy.Get(4) == 14);
+    assert(copy.GetMaterializedCount() == 5);
+    assert(source.GetMaterializedCount() == 1);
+    assert(source.Get(2) == 8);
+}
+
+// Индексное правило после адаптации в общий rule должно работать с finite и omega-индексами.
+void TestOrdinalGeneratorRuleAfterCopy() {
+    LazySequence<int> source(
+        Ordinal(2, 3),
+        [](const Ordinal& index) {
+            return static_cast<int>(index.OmegaBlocks() * 100 + index.FiniteOffset());
+        });
+
+    assert(source.Get(2) == 2);
+    assert(source.Get(Ordinal(1, 4)) == 104);
+
+    LazySequence<int> copy(source);
+
+    assert(copy.Get(Ordinal(1, 2)) == 102);
+    assert(copy.GetMaterializedCount() == 5);
+    assert(source.GetMaterializedCount() == 4);
+}
+
 // Вставка, добавление, конкатенация и подпоследовательность для конечных данных.
 void TestFiniteEditingOperations() {
     int originalItems[] = {2, 3};
@@ -103,6 +140,53 @@ void TestConcatOfTwoOmegaSequences() {
     assert(naturalsThenTens.Get(Ordinal(1, 3)) == 40);
 }
 
+// Конкатенация конечной и бесконечной последовательностей в обоих порядках.
+void TestConcatFiniteAndOmegaSequences() {
+    int finiteData[] = {7, 8, 9};
+    LazySequence<int> finite(finiteData, 3);
+    LazySequence<int> naturals(
+        Ordinal::Omega(),
+        [](const Ordinal& index) {
+            return static_cast<int>(index.FiniteValue()) + 1;
+        });
+
+    LazySequence<int> finiteThenOmega = finite.Concat(naturals);
+    LazySequence<int> omegaThenFinite = naturals.Concat(finite);
+
+    assert(finiteThenOmega.GetLengthOrdinal() == Ordinal::Omega());
+    assert(finiteThenOmega.Get(0) == 7);
+    assert(finiteThenOmega.Get(2) == 9);
+    assert(finiteThenOmega.Get(3) == 1);
+    assert(finiteThenOmega.Get(6) == 4);
+
+    assert(omegaThenFinite.GetLengthOrdinal() == Ordinal(1, 3));
+    assert(omegaThenFinite.Get(4) == 5);
+    assert(omegaThenFinite.Get(Ordinal::Omega()) == 7);
+    assert(omegaThenFinite.Get(Ordinal(1, 2)) == 9);
+}
+
+// Добавление элемента в начало и конец omega-последовательности.
+void TestAppendAndPrependOnOmegaSequence() {
+    LazySequence<int> naturals(
+        Ordinal::Omega(),
+        [](const Ordinal& index) {
+            return static_cast<int>(index.FiniteValue()) + 1;
+        });
+
+    LazySequence<int> prepended = naturals.PrependItem(0);
+    LazySequence<int> appended = naturals.AppendItem(99);
+
+    assert(prepended.GetLengthOrdinal() == Ordinal::Omega());
+    assert(prepended.Get(0) == 0);
+    assert(prepended.Get(1) == 1);
+    assert(prepended.Get(5) == 5);
+
+    assert(appended.GetLengthOrdinal() == Ordinal(1, 1));
+    assert(appended.Get(0) == 1);
+    assert(appended.Get(4) == 5);
+    assert(appended.Get(Ordinal::Omega()) == 99);
+}
+
 // Основные операции над последовательностью: Map, Where, Zip и Reduce.
 void TestMapWhereZipAndReduce() {
     int sourceItems[] = {1, 2, 3, 4};
@@ -144,7 +228,7 @@ void TestMixWith() {
     assert(mixed.Get(5) == 200);
 }
 
-// Ordinal-провайдеры, Map/Zip и срез через границу omega-блоков.
+// Ordinal-провайдеры, Map Zip и срез через границу omega-блоков.
 void TestOrdinalProviderMapZipAndCrossBlockSubsequence() {
     LazySequence<int> ordinalProvider(
         Ordinal(2, 0),
@@ -188,8 +272,8 @@ void TestOrdinalProviderMapZipAndCrossBlockSubsequence() {
     assert(crossBlockSlice.Get(Ordinal(1, 1)) == 3001);
 }
 
-// Insert и Where для последовательностей с финит и инфинит.
-void TestOrdinalInsertAndWhereOverConcatenatedOmegaSequences() {
+// Insert для omega-индексов и запрет Where для бесконечной длины.
+void TestOrdinalInsertAndFiniteWhereOnly() {
     const LazySequence<int> naturals(
         Ordinal::Omega(),
         [](const Ordinal& index) {
@@ -204,9 +288,6 @@ void TestOrdinalInsertAndWhereOverConcatenatedOmegaSequences() {
     LazySequence<int> insertedAtFiniteIndex = naturals.InsertItemAt(77, 2);
     LazySequence<int> insertedAtOmega = naturals.InsertItemAt(88, Ordinal::Omega());
     LazySequence<int> naturalsThenTens = naturals.Concat(tens);
-    LazySequence<int> evenValues = naturalsThenTens.Where([](int value) {
-        return value % 2 == 0;
-    });
 
     assert(insertedAtFiniteIndex.GetLengthOrdinal() == Ordinal::Omega());
     assert(insertedAtFiniteIndex.Get(0) == 0);
@@ -215,11 +296,13 @@ void TestOrdinalInsertAndWhereOverConcatenatedOmegaSequences() {
     assert(insertedAtOmega.GetLengthOrdinal() == Ordinal(1, 1));
     assert(insertedAtOmega.Get(Ordinal::Omega()) == 88);
 
-    assert(evenValues.GetLengthOrdinal() == Ordinal(2, 0));
-    assert(evenValues.Get(0) == 0);
-    assert(evenValues.Get(1) == 2);
-    assert(evenValues.Get(Ordinal::Omega()) == 100);
-    assert(evenValues.Get(Ordinal(1, 2)) == 104);
+    bool thrown = false;
+    try {
+        naturalsThenTens.Where(IsEven);
+    } catch (const std::logic_error&) {
+        thrown = true;
+    }
+    assert(thrown);
 }
 
 // Чтение/запись потоков и вычисление статистики по потоку.
@@ -255,9 +338,9 @@ void TestStreamsAndStatistics() {
     assert(result.Get(2) == 6);
     output.Close();
 
-    ReadOnlyStream<double> statisticsStream("5 1 3 2 4", [](const std::string& token) {
-        return std::stod(token);
-    });
+    double statisticsData[] = {5, 1, 3, 2, 4};
+    MutableArraySequence<double> statisticsValues(statisticsData, 5);
+    ReadOnlyStream<double> statisticsStream(statisticsValues);
 
     statisticsStream.Open();
     OnlineStatistics statistics = CollectStatistics(statisticsStream, 100);
@@ -277,11 +360,15 @@ void TestStreamsAndStatistics() {
 void RunAllTests() {
     TestArrayBackedLazySequence();
     TestFibonacciRecurrence();
+    TestRecurrentGeneratorCopyUsesCopiedHistory();
+    TestOrdinalGeneratorRuleAfterCopy();
     TestFiniteEditingOperations();
     TestConcatOfTwoOmegaSequences();
+    TestConcatFiniteAndOmegaSequences();
+    TestAppendAndPrependOnOmegaSequence();
     TestMapWhereZipAndReduce();
     TestMixWith();
     TestOrdinalProviderMapZipAndCrossBlockSubsequence();
-    TestOrdinalInsertAndWhereOverConcatenatedOmegaSequences();
+    TestOrdinalInsertAndFiniteWhereOnly();
     TestStreamsAndStatistics();
 }

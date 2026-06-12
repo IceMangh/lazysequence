@@ -374,9 +374,7 @@ public:
         auto secondCopy = second.SharedCopy();
         auto thirdCopy = third.SharedCopy();
 
-        const Ordinal shortestLength = MinOrdinal(
-                firstCopy->lengthOrdinal_,
-                MinOrdinal(secondCopy->lengthOrdinal_, thirdCopy->lengthOrdinal_));
+        const Ordinal shortestLength = MinOrdinal(firstCopy->lengthOrdinal_,MinOrdinal(secondCopy->lengthOrdinal_, thirdCopy->lengthOrdinal_));
         Ordinal resultLength = Ordinal::Omega();
         if (shortestLength.IsFinite()) {
             resultLength = shortestLength.Add(shortestLength).Add(shortestLength);
@@ -411,30 +409,21 @@ public:
 
     template <class Predicate>
     LazySequence<T> Where(Predicate predicate) const {
-        auto source = SharedCopy();
-
-        if (lengthOrdinal_.IsFinite()) {
-            MutableArraySequence<T> filtered;
-            const int length = GetLength();
-
-            for (int i = 0; i < length; ++i) {
-                const T& value = Get(i);
-                if (predicate(value)) {
-                    filtered.Append(value);
-                }
-            }
-
-            return LazySequence<T>(filtered);
+        if (!lengthOrdinal_.IsFinite()) {
+            throw std::logic_error("non-finite where");
         }
 
-        auto state = std::make_shared<LazySequenceWhereState<T>>();
+        MutableArraySequence<T> filtered;
+        const int length = GetLength();
 
-        return LazySequence<T>(
-                lengthOrdinal_,
-                LazySequenceWhereProvider<T, Predicate>{
-                        source,
-                        predicate,
-                        state});
+        for (int i = 0; i < length; ++i) {
+            const T& value = Get(i);
+            if (predicate(value)) {
+                filtered.Append(value);
+            }
+        }
+
+        return LazySequence<T>(filtered);
     }
 
     template <class U>
